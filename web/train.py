@@ -31,6 +31,15 @@ SRC = {
 TF = "M5"; H = 48; THR = 0.0005; TARGET_PER_SYM = 1200; TFW = 0.6
 
 
+def _load_proj_model():
+    try:
+        return (json.load(open(os.path.join(os.path.dirname(__file__), "tuned.json"),
+                                encoding="utf-8")) or {}).get("projection_model")
+    except Exception:
+        return None
+_PROJ_MODEL = _load_proj_model()
+
+
 def build_calls(D):
     """Per-bar directional call (+1/-1/0) mirroring the live projection backbone, plus the
     confluence count from the same 3 independent styles the live signal uses."""
@@ -46,7 +55,9 @@ def build_calls(D):
     div = np.zeros(n)
     try:
         for d in RT.divergences(h, l, c, rsi, L=5, recent_bars=n):
-            b = d["bar"]; div[b:min(n, b + 12)] = 1.0 if d["type"] == "bull" else -1.0
+            b = d["bar"]
+            start = b + 5   # = b + L; pivot only confirmable here (no 5-bar look-ahead)
+            div[start:min(n, start + 12)] = 1.0 if d["type"] == "bull" else -1.0
     except Exception:
         pass
     # discount/premium
@@ -59,6 +70,22 @@ def build_calls(D):
 
     score = 1.0 * np.nan_to_num(bias) + 0.4 * slope + 0.9 * TFW * rsi_pull + 0.7 * TFW * div
     call = np.sign(score)
+    # consistency with the live project(): if tuned.json carries a fitted projection_model
+    # (idea-2), use its re-weighted logistic + honest abstention. Same formula + feature order as
+    # rsi_tools.proj_features. NOTE: the `bias` feature here is the engine's 3-term HTF trend
+    # (b1+2b2+2b3) — an HTF-direction proxy for the 2-term resampled bias the weights were fit on,
+    # so this backfill is consistent in intent but approximate on that one term. Falls back to legacy.
+    m = (_PROJ_MODEL or {}).get(TF)
+    if m and "weights" in m and len(m["weights"]) == 8:
+        rsi_z = np.nan_to_num((rsi - 50.0) / 15.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mv = np.zeros(n); mv[20:] = np.abs(c[20:] - c[:-20])
+            ts = np.clip(np.nan_to_num(np.where(atr > 0, mv / atr, 0.0)), 0.0, 5.0)
+        is_h1 = 1.0 if TF == "H1" else 0.0
+        X = np.column_stack([np.nan_to_num(bias), slope, rsi_pull, rsi_z, div, ts, ts * slope, rsi_z * is_h1])
+        z = float(m["intercept"]) + X @ np.asarray(m["weights"], float)
+        P = 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
+        call = np.where(np.abs(P - 0.5) < float(m.get("tau", 0.0)), 0.0, np.sign(P - 0.5))
     # confluence among the 3 independent styles (matches signal_service combo)
     styles = np.vstack([rsi_pull, dp, div])
     return call, styles, c

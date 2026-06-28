@@ -120,8 +120,56 @@ def _bounce_decision(zone, into_dir, rsi_last):
     return (will, s, reason)
 
 
+def _proj_tf_key(tf_minutes):
+    return {5: "M5", 15: "M15", 60: "H1"}.get(int(tf_minutes))
+
+
+def proj_features(c, atr, rsi_last, divs, bias_val, tf_minutes):
+    """The 8 causal features the fitted projection model (idea-2) consumes, at the LAST bar.
+    MUST mirror backtest/exp_idea-2.py:feature_matrix exactly (order = FEAT_NAMES there)."""
+    c = np.asarray(c, float); n = len(c)
+    if n < 22 or rsi_last is None or not np.isfinite(rsi_last):
+        return None
+    slope_sign = float(np.sign(c[-1] - c[-1 - 20]))
+    rsi_pull = 1.0 if rsi_last < 30 else (-1.0 if rsi_last > 70 else 0.0)
+    rsi_z = (float(rsi_last) - 50.0) / 15.0
+    # div at the last bar. Mirror the ARRAY-OVERWRITE precedence of exp_idea-2.feature_matrix /
+    # build_calls (div[b+L:b+L+12] = v): every CONFIRMED divergence whose active window covers the
+    # last bar writes div, and the LAST such one in list order wins (NOT the most-recent pivot).
+    div = 0.0
+    if divs:
+        for d in divs:
+            b = d.get("bar")
+            if b is None:
+                continue
+            start = b + 5
+            if start <= n - 1 < start + 12:
+                div = 1.0 if d.get("type") == "bull" else -1.0
+    a = float(atr[-1]) if (atr is not None and len(atr) and np.isfinite(atr[-1]) and atr[-1] > 0) else 0.0
+    ts = min(5.0, abs(c[-1] - c[-1 - 20]) / a) if a > 0 else 0.0
+    is_h1 = 1.0 if int(tf_minutes) == 60 else 0.0
+    return [float(bias_val), slope_sign, rsi_pull, rsi_z, div, ts, ts * slope_sign, rsi_z * is_h1]
+
+
+def proj_predict(model, c, atr, rsi_last, divs, bias_val, tf_minutes):
+    """P(up) from the fitted per-TF logistic in tuned.json projection_model, or None to fall back."""
+    if not model:
+        return None
+    m = model.get(_proj_tf_key(tf_minutes))
+    if not m or "weights" not in m:
+        return None
+    feats = proj_features(c, atr, rsi_last, divs, bias_val, tf_minutes)
+    if feats is None:
+        return None
+    w = m["weights"]
+    if len(w) != len(feats):
+        return None
+    z = float(m.get("intercept", 0.0)) + sum(wi * fi for wi, fi in zip(w, feats))
+    return 1.0 / (1.0 + np.exp(-max(-30.0, min(30.0, z))))
+
+
 def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
-            tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48):
+            tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48, model=None):
     """Honest, ZONE-AWARE directional projection (a hypothesis, not a promise), drawn as an
     ORGANIC wavy path. The path runs toward the nearest opposing zone; on contact it either
     REACTS (bounces/returns) or BREAKS through and continues — decided by zone strength
@@ -162,6 +210,15 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
     dirn = int(np.sign(score)) if abs(score) > 1e-9 else (bias_val or int(np.sign(slope)))
     if dirn == 0: dirn = 1
     conf = max(0.12, min(0.9, 0.45 + 0.13 * abs(score)))
+    # fitted projection model (idea-2): re-weighted direction + honest abstention. Opt-in via
+    # tuned.json `projection_model` (passed as `model`); validated out-of-time (walkforward_idea2).
+    # Falls back to the legacy hand-tuned score above when no model is supplied.
+    p_up = proj_predict(model, c, atr, rsi_last, divs, bias_val, tf_minutes)
+    if p_up is not None:
+        m = model.get(_proj_tf_key(tf_minutes), {})
+        tau = float(m.get("tau", 0.0))
+        dirn = 0 if abs(p_up - 0.5) < tau else (1 if p_up >= 0.5 else -1)
+        conf = max(0.12, min(0.9, p_up if p_up >= 0.5 else 1.0 - p_up))
     label = {1: "صعودی", -1: "نزولی", 0: "خنثی/رنج"}[dirn if dirn in (-1, 0, 1) else 0]
 
     note = []

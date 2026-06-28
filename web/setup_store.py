@@ -135,7 +135,9 @@ def _combo_votes(D):
     dv = np.zeros(n)
     try:
         for d in RT.divergences(h, l, c, rsi, L=5, recent_bars=n):
-            b = d["bar"]; dv[b:min(n, b + 12)] = 1.0 if d["type"] == "bull" else -1.0
+            b = d["bar"]
+            start = b + 5   # = b + L; pivot only confirmable here (no 5-bar look-ahead)
+            dv[start:min(n, start + 12)] = 1.0 if d["type"] == "bull" else -1.0
     except Exception:
         pass
     return np.vstack([rp, dp, dv])

@@ -72,7 +72,8 @@ def method_votes(D):
         for d in RT.divergences(h, l, c, rsi, L=5, recent_bars=n):
             b = d["bar"]
             s = 1.0 if d["type"] == "bull" else -1.0
-            dv[b:min(n, b + 12)] = s
+            start = b + 5   # = b + L; pivot only confirmable here (no 5-bar look-ahead)
+            dv[start:min(n, start + 12)] = s
     except Exception:
         pass
     votes["rsi_div"] = dv

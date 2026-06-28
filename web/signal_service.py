@@ -340,7 +340,8 @@ def compute(sym, tf="M5"):
     tfmin = B.TF_MIN.get(tf, 5)
     tfw = TF_WEIGHT.get(tf, 0.6)
     proj = RT.project(D["time"], c, atr, biasv, rsi_last, divs, primary, tfmin,
-                      tf_weight=tfw, dom_bias=dom_bias, zones=zones, price=price)
+                      tf_weight=tfw, dom_bias=dom_bias, zones=zones, price=price,
+                      model=TUNED().get("projection_model"))
 
     # ---- clear ACTION VERDICT: buy now / sell now / wait ----
     verdict = _verdict(zones, primary, price, a, rstate, tf)

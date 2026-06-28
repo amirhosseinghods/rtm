@@ -26,5 +26,12 @@
     "LTCUSDT|M5": 0.498,
     "DOTUSDT|M5": 0.504,
     "XAUUSD|M5": 0.465
+  },
+  "projection_model": {
+    "_note": "idea-2 per-TF logistic (re-weighted direction + honest abstention). Fit by backtest/fit_projection_model.py, validated out-of-time by backtest/walkforward_idea2.py (overall 0.485->0.511 full-cov; gate ~0.535 @ 38% coverage). Remove this key to revert project() to the legacy hand-tuned score.",
+    "features": ["bias", "slope_sign", "rsi_pull", "rsi_z", "div", "trend_strength", "ts*slope", "rsi_z*1{H1}"],
+    "M5":  { "intercept": -0.09224, "weights": [0.12816, -0.03618, -0.21567, -0.24761, 0.22425, 0.00799, 0.03497, 0.0], "tau": 0.04 },
+    "M15": { "intercept": -0.06144, "weights": [-0.03767, -0.04887, 0.08386, -0.02866, -0.27712, 0.00923, -0.05627, 0.0], "tau": 0.02 },
+    "H1":  { "intercept": 0.11909, "weights": [0.17714, 0.02221, -0.10578, -0.07682, 0.12956, -0.08239, -0.04489, -0.07682], "tau": 0.0 }
   }
 }
