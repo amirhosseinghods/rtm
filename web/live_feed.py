@@ -267,7 +267,9 @@ def chart_ohlcv(sym, tf, bars):
     if _is_binance(kind):
         df = _binance_klines_deep(ticker, BINANCE_INTERVAL[tf], bars)
         df = df.dropna().drop_duplicates("Time").sort_values("Time").tail(bars)
-        t = (pd.to_datetime(df["Time"]).astype("int64") // 10**9).tolist()
+        # normalise to unix SECONDS regardless of the datetime64 resolution (pandas 2.x keeps
+        # the 'ms' unit from unit="ms", so a blind //10**9 would be 1000x off)
+        t = df["Time"].values.astype("datetime64[s]").astype("int64")
         o = df["Open"].tolist(); h = df["High"].tolist()
         l = df["Low"].tolist();  c = df["Close"].tolist()
         return [[int(t[i]), float(o[i]), float(h[i]), float(l[i]), float(c[i])] for i in range(len(t))]
@@ -326,16 +328,55 @@ def _ohlc(path):
     return cached
 
 
+# The committed deep Binance OHLCV the chart serves (site/data/ohlcv_SYM_TF.json) doubles as a
+# DEEP, PERSISTENT price source for scoring — unlike the ephemeral engine CSVs (which on the CI
+# runner may be short or absent at score time), this is written every run, spans weeks/months,
+# and survives across runs. Scoring reads it FIRST so predictions actually resolve.
+SITE_DATA = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "site", "data"))
+_json_cache = {}   # (path, mtime) -> (t, h, l, c) ascending
+
+def _json_ohlc(sym, tf):
+    path = os.path.join(SITE_DATA, f"ohlcv_{sym}_{tf}.json")
+    if not os.path.exists(path):
+        return None
+    mt = os.path.getmtime(path); ck = (path, mt)
+    hit = _json_cache.get(ck)
+    if hit is None:
+        try:
+            import json as _j
+            bars = (_j.load(open(path, encoding="utf-8")) or {}).get("bars") or []
+            if not bars:
+                return None
+            if isinstance(bars[0], list):                       # compact [unixSec,o,h,l,c]
+                a = np.asarray(bars, dtype="float64")
+                t = a[:, 0].astype("int64"); h = a[:, 2]; l = a[:, 3]; c = a[:, 4]
+            else:                                               # legacy [{time,open,high,low,close}]
+                t = np.array([int(pd.to_datetime(str(x["time"])).value // 10**9) for x in bars], dtype="int64")
+                h = np.array([x["high"] for x in bars], dtype="float64")
+                l = np.array([x["low"] for x in bars], dtype="float64")
+                c = np.array([x["close"] for x in bars], dtype="float64")
+        except Exception:
+            return None
+        order = np.argsort(t)
+        hit = (t[order], h[order], l[order], c[order])
+        if len(_json_cache) > 60:
+            _json_cache.clear()
+        _json_cache[ck] = hit
+    return hit
+
+
 def forward_path(sym, tf, ts):
-    """OHLC bars with time > ts (merged deep+engine history) — for resolving a zone setup's
+    """OHLC bars with time > ts (deep Binance JSON + engine CSVs) — for resolving a zone setup's
     SL/TP outcome going forward. Returns (t, high, low, close) arrays or None."""
     best = None
+    jb = _json_ohlc(sym, tf)
+    cands = ([jb] if jb is not None else [])
     for p in (os.path.join(HIST_DIR, f"{sym}_{tf}.csv"),
               os.path.join(DATA_DIR, f"{sym}_{tf}.csv")):
         s = _ohlc(p)
-        if s is None:
-            continue
-        t, h, l, c = s
+        if s is not None:
+            cands.append(s)
+    for t, h, l, c in cands:
         if best is None or len(t) > len(best[0]):
             best = (t, h, l, c)
     if best is None:
@@ -350,14 +391,18 @@ def price_at(sym, tf, eval_t):
     AT a prediction's horizon. Returns None when the horizon isn't covered by data yet, so
     a prediction stays pending instead of being scored against the wrong (live) price."""
     best_t = best_c = None
+    sources = []
+    jb = _json_ohlc(sym, tf)                       # deep committed Binance first
+    if jb is not None:
+        sources.append((jb[0], jb[3]))             # (time, close)
     for p in (os.path.join(DATA_DIR, f"{sym}_{tf}.csv"),
               os.path.join(HIST_DIR, f"{sym}_{tf}.csv")):
         s = _series(p)
-        if s is None:
-            continue
-        t, c = s
+        if s is not None:
+            sources.append(s)
+    for t, c in sources:
         if len(t) == 0 or t[-1] < eval_t:
-            continue                          # this file doesn't reach the horizon
+            continue                          # this source doesn't reach the horizon
         idx = int(np.searchsorted(t, eval_t, side="left"))
         if idx >= len(t):
             continue
