@@ -153,6 +153,7 @@ def _verdict(zones, primary, price, atr, rstate, tf):
     # no behavioural-model veto. Weaker zones still render for context but don't fire a signal.
     sel = TUNED().get("selectivity", {})
     rmin = float(sel.get("room_min", 2.0)); need_htf = bool(sel.get("require_htf", True))
+    need_agree = bool(sel.get("require_model_agree", True))
     def passes(z):
         if not (z["actionable_now"] and z["confidence"] != "LOW" and z["risk_rating"]["level"] != "زیاد"):
             return False
@@ -161,6 +162,9 @@ def _verdict(zones, primary, price, atr, rstate, tf):
         if z.get("room_R") is not None and z["room_R"] < rmin:
             return False
         if z.get("model_against"):
+            return False
+        # validated ~76% gate: require a CONFIDENT model agreement (only when the model ran)
+        if need_agree and z.get("model_p_up") is not None and not z.get("model_agree"):
             return False
         return True
     ready = [z for z in zones if passes(z)]
@@ -393,8 +397,10 @@ def compute(sym, tf="M5"):
     tfmin0 = B.TF_MIN.get(tf, 5)
     model = TUNED().get("projection_model")
     p_up = RT.proj_predict(model, c, atr, rsi_last, divs, biasv, tfmin0) if model else None
-    tau = float(((model or {}).get(RT._proj_tf_key(tfmin0), {}) or {}).get("tau", 0.0))
-    use_gate = TUNED().get("selectivity", {}).get("use_model_gate", True)
+    _sel = TUNED().get("selectivity", {})
+    _proj_tau = float(((model or {}).get(RT._proj_tf_key(tfmin0), {}) or {}).get("tau", 0.0))
+    tau = max(_proj_tau, float(_sel.get("model_tau", 0.05)))   # confident-agreement band (validated 0.05)
+    use_gate = _sel.get("use_model_gate", True)
     if p_up is not None and use_gate:
         for z in zones:
             pv = 1 if z["dir"] == "LONG" else -1

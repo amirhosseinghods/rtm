@@ -36,12 +36,17 @@ def _partial_cfg():
 
 
 def _actionable(z):
-    """Does this zone match what the system actually RECOMMENDS (the >=70% gate)? Only HTF
-    (OB-1h/FL-1h) with-trend zones with clear room and no behavioural-model veto. The headline
-    win-rate is measured on THESE — the trades the user is told to take, not every drawn zone."""
+    """Does this zone match what the system actually RECOMMENDS (the validated ~76% gate)? Only
+    HTF (OB-1h/FL-1h) with-trend zones with clear room AND a confident behavioural-model
+    agreement. The headline win-rate is measured on THESE — the trades the user is told to take."""
     room = z.get("room_R")
-    return bool(str(z.get("src", "")).endswith("-1h") and z.get("with_trend")
+    base = bool(str(z.get("src", "")).endswith("-1h") and z.get("with_trend")
                 and (room is None or room >= 2.0) and not z.get("model_against"))
+    if not base:
+        return False
+    if z.get("model_p_up") is not None and not z.get("model_agree"):   # model ran but didn't confidently agree
+        return False
+    return True
 
 
 def _read():
@@ -188,12 +193,18 @@ def train_from_history(symbols=None, tf="M5"):
     (the 10-agent operating point). These are the trades the system actually recommends."""
     os.environ["FD_SRC"] = "1h"; os.environ["FD_CONF"] = "room"
     os.environ["FD_PARTIAL"] = "1"; os.environ["FD_TP1"] = "0.5"; os.environ["FD_RUNNER"] = "2.0"
+    os.environ["FD_MODEL"] = "agree"; os.environ["FD_MTAU"] = "0.05"   # confident model agreement (validated ~76%)
     import importlib, numpy as np
     import rtm_bt as B, bt_structure as BS
     importlib.reload(BS)
     SRC = symbols or ["BTCUSDT", "XRPUSDT", "ETHUSD", "SOLUSD", "BNBUSD", "ADAUSD",
                       "AVAXUSD", "LINKUSD", "LTCUSD", "DOTUSD", "ATOMUSD", "DOGEUSD", "XAUUSD"]
     rows = [r for r in _read() if r.get("origin") != "train"]   # refresh training rows
+    # existing live rows were tagged 'actionable' under an OLDER gate and lack the model fields to
+    # re-verify, so clear the stale tag here; new live setups get tagged under the current gate.
+    for r in rows:
+        if r.get("origin") == "live":
+            r["actionable"] = False
     added = 0
     for sym in SRC:
         try:

@@ -18,10 +18,12 @@
     "tp2_R": 2.0
   },
   "selectivity": {
-    "_note": "Gate for the BUY_NOW/SELL_NOW verdict — the >=70% operating point. Only HTF (OB-1h/FL-1h) zones with >=room_min R of clear room and no behavioural-model veto fire an actionable signal; weaker zones still render for context.",
+    "_note": "Gate for the BUY_NOW/SELL_NOW verdict — the validated ~76% operating point (10-agent matrix 2026-06-29). Only HTF (OB-1h/FL-1h) with-trend zones with >=room_min R of clear room AND a CONFIDENT behavioural-model agreement (|p_up-0.5|>=model_tau in the zone's direction) fire an actionable signal. This lifted net-win 70->76%, expR +0.27->+0.53, PF 1.9->3.2 (OOS-stable). Set require_model_agree=false to relax back to the no-model gate.",
     "room_min": 2.0,
     "require_htf": true,
-    "use_model_gate": true
+    "use_model_gate": true,
+    "require_model_agree": true,
+    "model_tau": 0.05
   },
   "stops": {
     "_note": "SL geometry, learned per source/symbol by optimize.run() from MFE/MAE of resolved setups. buf_atr = breathing room beyond the zone (xATR); min_atr = floor stop distance (xATR). disabled_sources are auto-muted when their stop-rate stays high with negative expR. Delete this key to revert to hardcoded buf=0.3 / minStop.",

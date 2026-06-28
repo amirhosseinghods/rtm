@@ -15,6 +15,7 @@ import os, sys, json, glob
 import numpy as np, pandas as pd
 import rtm_bt as B
 import rtm_concepts as RC
+import rsi_tools as RT
 
 ETF = sys.argv[1] if len(sys.argv) > 1 else "M5"
 SCOPE = sys.argv[2] if len(sys.argv) > 2 else "all"   # "all" = every Downloads symbol, else watchlist
@@ -34,6 +35,23 @@ RUNNER_R = float(os.environ.get("FD_RUNNER", "2.0"))     # runner target (in R) 
 BUF_ATR  = os.environ.get("FD_BUF")                      # None = per-source default (0.3); else override ×ATR
 MINSTOP_ATR = os.environ.get("FD_MINSTOP")               # None = per-symbol default; else override ×ATR
 OUT_CSV  = os.environ.get("FD_OUT", os.path.expanduser("~/Desktop/trade/backtest/bt_structure_rows.csv"))
+MODEL_MODE = os.environ.get("FD_MODEL", "off")           # off | veto | agree  (behavioural-model gate)
+MTAU = float(os.environ.get("FD_MTAU", "0.0"))           # agreement band: |p_up-0.5| must exceed this
+
+
+def _proj_model(tfmin):
+    """Load the per-TF projection_model from tuned.json (so the backtest can apply the SAME
+    behavioural-model gate the live engine uses). Returns (intercept, weights) or None."""
+    import json
+    try:
+        import rsi_tools as _RT
+        t = json.load(open(os.path.join(os.path.dirname(__file__), "..", "web", "tuned.json"), encoding="utf-8"))
+        m = (t.get("projection_model") or {}).get(_RT._proj_tf_key(tfmin))
+        if m and "weights" in m:
+            return float(m.get("intercept", 0.0)), [float(w) for w in m["weights"]]
+    except Exception:
+        pass
+    return None
 
 def score_partial(mfe_R, full_win, tp1_R=TP1_R, tp1_frac=TP1_FRAC, runner_R=RUNNER_R, move_be=MOVE_BE):
     """Realized R for the partial+BE rule (canonical, shared with the live setup_store sim).
@@ -73,6 +91,33 @@ def collect(D, sym, sess):
     n = len(D["c"]); o,h,l,c,atr = D["o"],D["h"],D["l"],D["c"],D["atr"]
     b1,b2,b3 = D["b1"],D["b2"],D["b3"]
     bias = np.sign(1*b1+2*b2+2*b3).astype(int)
+    # ---- behavioural-model gate (same projection_model the live engine uses) ----
+    tfmin = B.TF_MIN.get(ETF, 5) if hasattr(B, "TF_MIN") else {"M1":1,"M5":5,"M15":15,"H1":60,"H4":240}.get(ETF, 5)
+    _pm = _proj_model(tfmin) if MODEL_MODE != "off" else None
+    pup = None
+    if _pm is not None:
+        intercept, W = _pm
+        rsiA = RT.rsi(c, 14)
+        dv = np.zeros(n)
+        try:
+            for d in RT.divergences(h, l, c, rsiA, L=5, recent_bars=n):
+                bb = d["bar"]; st = bb + 5
+                dv[st:min(n, st + 12)] = 1.0 if d["type"] == "bull" else -1.0
+        except Exception:
+            pass
+        is_h1 = 1.0 if int(tfmin) == 60 else 0.0
+        pup = np.full(n, 0.5)
+        for i in range(21, n):
+            a = atr[i] if (np.isfinite(atr[i]) and atr[i] > 0) else 0.0
+            r = rsiA[i]
+            if not np.isfinite(r): continue
+            slope = float(np.sign(c[i] - c[i - 20]))
+            rsi_pull = 1.0 if r < 30 else (-1.0 if r > 70 else 0.0)
+            rsi_z = (float(r) - 50.0) / 15.0
+            ts = min(5.0, abs(c[i] - c[i - 20]) / a) if a > 0 else 0.0
+            feats = [float(bias[i]), slope, rsi_pull, rsi_z, float(dv[i]), ts, ts * slope, rsi_z * is_h1]
+            z = intercept + sum(w * f for w, f in zip(W, feats))
+            pup[i] = 1.0 / (1.0 + np.exp(-max(-30.0, min(30.0, z))))
     if sess == "london": insess = B.london_session(D["time"])
     elif sess == "ny":   insess = B.ny_session(D["time"])
     else:                insess = np.ones(n, bool)
@@ -112,6 +157,13 @@ def collect(D, sym, sess):
             if ZG[i] < minGrade: continue
             wt = (dr == bias[i]);
             if not (wt or bias[i] == 0): continue
+            # ---- behavioural-model gate (evaluated when price reaches the zone, like live) ----
+            if pup is not None:
+                pu = pup[i]
+                if MODEL_MODE == "veto":            # drop setups the model contradicts (mirrors live)
+                    if (dr == 1 and pu <= 0.5 - MTAU) or (dr == -1 and pu >= 0.5 + MTAU): continue
+                elif MODEL_MODE == "agree":         # stronger: only take setups the model AGREES with
+                    if not ((pu >= 0.5 + MTAU) if dr == 1 else (pu <= 0.5 - MTAU)): continue
             # ---- entry confirmations ----
             if CONF in ("reclaim", "all"):
                 # don't enter on the raw touch; require a reaction candle closing in trade dir, back inside the zone
