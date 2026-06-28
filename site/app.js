@@ -469,7 +469,8 @@ async function reload(analyzeToo) {
   if (analyzeToo) $("#assistant").textContent = "در حال تحلیل…";  // don't show prev symbol's analysis
   tickQuote();                                  // refresh the quote now (don't wait for the 5s tick)
   await loadChart(false);                       // fast recent view first (instant)
-  loadHistory();                                // then extend months into the past in the background
+  if (!STATIC) loadHistory();                   // server mode only: extend months of history in the background
+                                                // (STATIC candles are capped at 1000, so loadHistory would just refetch the same set)
   // health badge for the active TF
   const sig = await api(`/api/signal?symbol=${STATE.symbol}&tf=${STATE.tf}`);
   if (!sig.error) {

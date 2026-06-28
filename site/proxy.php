@@ -41,8 +41,8 @@ function http_get($url, &$code = null, &$err = null) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
       CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_CONNECTTIMEOUT => 6,
-      CURLOPT_TIMEOUT        => 9,
+      CURLOPT_CONNECTTIMEOUT => 3,
+      CURLOPT_TIMEOUT        => 6,
       CURLOPT_FOLLOWLOCATION => true,
       CURLOPT_SSL_VERIFYPEER => false,   // some shared hosts have a stale CA bundle
       CURLOPT_USERAGENT      => 'Mozilla/5.0 rtm-proxy',
@@ -53,7 +53,7 @@ function http_get($url, &$code = null, &$err = null) {
     curl_close($ch);
     return ($body === false) ? null : $body;
   }
-  $ctx = stream_context_create(['http' => ['timeout' => 9, 'header' => "User-Agent: rtm-proxy\r\n", 'ignore_errors' => true]]);
+  $ctx = stream_context_create(['http' => ['timeout' => 6, 'header' => "User-Agent: rtm-proxy\r\n", 'ignore_errors' => true]]);
   $body = @file_get_contents($url, false, $ctx);
   if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $code = (int)$m[1];
   return ($body === false) ? null : $body;
@@ -69,10 +69,10 @@ $IV = [
 
 /* ---------- providers: each returns normalised klines (Binance shape) or null ---------- */
 function p_binance($symbol, $interval, $limit, &$code, &$err) {
-  foreach (['https://data-api.binance.vision','https://api.binance.com','https://api-gcp.binance.com'] as $h) {
-    $b = http_get("$h/api/v3/klines?symbol=$symbol&interval=$interval&limit=$limit", $code, $err);
-    if (ok($b, $code) && isset($b[0]) && $b[0] === '[') return $b;   // already Binance shape
-  }
+  // only data-api.binance.vision (the public market-data host): it returns 451 instantly when
+  // blocked, so no slow timeout. If it's reachable, the rest of Binance is too.
+  $b = http_get("https://data-api.binance.vision/api/v3/klines?symbol=$symbol&interval=$interval&limit=$limit", $code, $err);
+  if (ok($b, $code) && isset($b[0]) && $b[0] === '[') return $b;   // already Binance shape
   return null;
 }
 function p_bybit($symbol, $ivKey, $limit, &$code, &$err) {
@@ -115,10 +115,8 @@ function p_kucoin($dash, $ivKey, $limit, &$code, &$err) {
 
 /* ---------- ticker providers: each returns a price string or null ---------- */
 function t_binance($symbol, &$code, &$err) {
-  foreach (['https://data-api.binance.vision','https://api.binance.com'] as $h) {
-    $b = http_get("$h/api/v3/ticker/price?symbol=$symbol", $code, $err);
-    if (ok($b, $code)) { $j = json_decode($b, true); if (isset($j['price'])) return (string)$j['price']; }
-  }
+  $b = http_get("https://data-api.binance.vision/api/v3/ticker/price?symbol=$symbol", $code, $err);
+  if (ok($b, $code)) { $j = json_decode($b, true); if (isset($j['price'])) return (string)$j['price']; }
   return null;
 }
 function t_bybit($symbol, &$code, &$err) {
@@ -135,6 +133,35 @@ function t_kucoin($dash, &$code, &$err) {
   $b = http_get("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=$dash", $code, $err);
   if (!ok($b, $code)) return null;
   $j = json_decode($b, true); return $j['data']['price'] ?? null;
+}
+
+/* ---------- remember the last working exchange so we skip dead-host timeouts ---------- */
+function cache_dir() { $d = sys_get_temp_dir(); return ($d && is_dir($d) && is_writable($d)) ? $d : __DIR__ . '/data'; }
+function src_get($key) {
+  $f = cache_dir() . "/rtm_src_$key";
+  if (is_file($f) && (time() - filemtime($f) < 600)) { $v = trim((string)@file_get_contents($f)); return $v !== '' ? $v : null; }
+  return null;
+}
+function src_set($key, $name) { @file_put_contents(cache_dir() . "/rtm_src_$key", $name); }
+function order_with_cache($key) {                       // cached winner first, then the rest
+  $all = ['binance', 'bybit', 'okx', 'kucoin'];
+  $hit = src_get($key);
+  if ($hit) { array_unshift($all, $hit); $all = array_values(array_unique($all)); }
+  return $all;
+}
+function run_klines($name, $symbol, $dash, $interval, $limit, &$c, &$e) {
+  if ($name === 'binance') return p_binance($symbol, $interval, $limit, $c, $e);
+  if ($name === 'bybit')   return p_bybit($symbol, $interval, $limit, $c, $e);
+  if ($name === 'okx')     return p_okx($dash, $interval, $limit, $c, $e);
+  if ($name === 'kucoin')  return p_kucoin($dash, $interval, $limit, $c, $e);
+  return null;
+}
+function run_ticker($name, $symbol, $dash, &$c, &$e) {
+  if ($name === 'binance') return t_binance($symbol, $c, $e);
+  if ($name === 'bybit')   return t_bybit($symbol, $c, $e);
+  if ($name === 'okx')     return t_okx($dash, $c, $e);
+  if ($name === 'kucoin')  return t_kucoin($dash, $c, $e);
+  return null;
 }
 
 /* ---------- diag: show what the server can actually reach ---------- */
@@ -157,16 +184,16 @@ if ($path === 'diag') {
 
 /* ---------- klines ---------- */
 if ($path === 'klines') {
-  $r = p_binance($symbol, $interval, $limit, $c, $e); if ($r !== null) { header('X-RTM-Source: binance'); echo $r; exit; }
-  $r = p_bybit($symbol, $interval, $limit, $c, $e);   if ($r !== null) { header('X-RTM-Source: bybit');   echo $r; exit; }
-  $r = p_okx($dash, $interval, $limit, $c, $e);       if ($r !== null) { header('X-RTM-Source: okx');     echo $r; exit; }
-  $r = p_kucoin($dash, $interval, $limit, $c, $e);    if ($r !== null) { header('X-RTM-Source: kucoin');  echo $r; exit; }
+  foreach (order_with_cache('klines') as $name) {
+    $r = run_klines($name, $symbol, $dash, $interval, $limit, $c, $e);
+    if ($r !== null) { src_set('klines', $name); header("X-RTM-Source: $name"); echo $r; exit; }
+  }
   http_response_code(502); echo json_encode(['__error' => 'upstream unreachable']); exit;
 }
 
 /* ---------- ticker ---------- */
-$p = t_binance($symbol, $c, $e); if ($p !== null) { header('X-RTM-Source: binance'); echo json_encode(['price' => $p]); exit; }
-$p = t_bybit($symbol, $c, $e);   if ($p !== null) { header('X-RTM-Source: bybit');   echo json_encode(['price' => $p]); exit; }
-$p = t_okx($dash, $c, $e);       if ($p !== null) { header('X-RTM-Source: okx');     echo json_encode(['price' => $p]); exit; }
-$p = t_kucoin($dash, $c, $e);    if ($p !== null) { header('X-RTM-Source: kucoin');  echo json_encode(['price' => $p]); exit; }
+foreach (order_with_cache('ticker') as $name) {
+  $p = run_ticker($name, $symbol, $dash, $c, $e);
+  if ($p !== null) { src_set('ticker', $name); header("X-RTM-Source: $name"); echo json_encode(['price' => $p]); exit; }
+}
 http_response_code(502); echo json_encode(['__error' => 'upstream unreachable']);
