@@ -22,7 +22,11 @@ async function binFetch(path, params, ms = 8000) {
     const r = await bfetch(`proxy.php?path=${path}&${qs}`, ms);
     if (r && !r.__error) return r;
   } catch (e) { /* fall through to direct */ }
-  const direct = path === "ticker" ? `${BINANCE}/ticker/price?${qs}` : `${BINANCE}/klines?${qs}`;
+  // direct Binance fallback: no deep pagination, and klines caps at 1000
+  const p2 = { ...params }; delete p2.deep;
+  if (p2.limit) p2.limit = Math.min(+p2.limit, 1000);
+  const qs2 = new URLSearchParams(p2).toString();
+  const direct = path === "ticker" ? `${BINANCE}/ticker/price?${qs2}` : `${BINANCE}/klines?${qs2}`;
   return bfetch(direct, ms);
 }
 
@@ -46,11 +50,13 @@ async function staticQuote(sym) {
   if (b) { try { const t = await binFetch("ticker", { symbol: b }); return { price: +t.price, delayed: false }; } catch (e) { return { price: null, delayed: false }; } }
   return { price: null, delayed: true };
 }
-async function staticCandles(sym, tf, limit) {
+async function staticCandles(sym, tf, limit, deep) {
   const b = binSym(sym);
   if (b) {
     try {
-      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[tf] || "5m", limit: Math.min(limit || 1000, 1000) });
+      const params = { symbol: b, interval: TF2IV[tf] || "5m", limit: Math.min(limit || 1000, deep ? 6000 : 1000) };
+      if (deep) params.deep = 1;   // proxy paginates months of history backward
+      const rows = await binFetch("klines", params, deep ? 25000 : 8000);
       return rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
     } catch (e) { return []; }   // Binance slow/blocked -> render signals without candles
   }
@@ -255,8 +261,8 @@ function fmt(x) {
 
 async function loadChart(keepView, deep) {
   let bars;
-  if (STATIC) {                          // candles direct from Binance (or XAUUSD JSON)
-    bars = await staticCandles(STATE.symbol, STATE.tf, 1000);
+  if (STATIC) {                          // candles via proxy (or XAUUSD JSON); deep = months back
+    bars = await staticCandles(STATE.symbol, STATE.tf, deep ? 6000 : 1000, deep);
   } else {
     const limit = deep ? 20000 : 1000;   // server paginates months of history
     const d = await api(`/api/ohlcv?symbol=${STATE.symbol}&tf=${STATE.tf}&limit=${limit}`);
@@ -483,9 +489,9 @@ async function reload(analyzeToo) {
   $("#livePrice").textContent = "…";            // clear stale price immediately on switch
   if (analyzeToo) $("#assistant").textContent = "در حال تحلیل…";  // don't show prev symbol's analysis
   tickQuote();                                  // refresh the quote now (don't wait for the 5s tick)
-  await loadChart(false);                       // fast recent view first (instant)
-  if (!STATIC) loadHistory();                   // server mode only: extend months of history in the background
-                                                // (STATIC candles are capped at 1000, so loadHistory would just refetch the same set)
+  await loadChart(false);                       // fast recent view first (instant, ~1000 bars)
+  loadHistory();                                // then extend months into the past in the background
+                                                // (STATIC: proxy paginates ~6000 bars; keepView leaves the view put)
   // health badge for the active TF
   const sig = await api(`/api/signal?symbol=${STATE.symbol}&tf=${STATE.tf}`);
   if (!sig.error) {

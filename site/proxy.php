@@ -66,51 +66,66 @@ $IV = [
   'okx'    => ['1m'=>'1m','5m'=>'5m','15m'=>'15m','30m'=>'30m','1h'=>'1H','4h'=>'4H','1d'=>'1D'],
   'kucoin' => ['1m'=>'1min','5m'=>'5min','15m'=>'15min','30m'=>'30min','1h'=>'1hour','4h'=>'4hour','1d'=>'1day'],
 ];
+$TFSEC = ['1m'=>60,'5m'=>300,'15m'=>900,'30m'=>1800,'1h'=>3600,'4h'=>14400,'1d'=>86400];
 
-/* ---------- providers: each returns normalised klines (Binance shape) or null ---------- */
-function p_binance($symbol, $interval, $limit, &$code, &$err) {
+/* ---------- providers: each returns ONE page of klines as ASC PHP rows [tsMs,o,h,l,c,v]
+   (or null). `$end` (ms, 0 = latest) is the pagination cursor for deep history. ---------- */
+function p_binance($symbol, $interval, $limit, $end, &$code, &$err) {
   // only data-api.binance.vision (the public market-data host): it returns 451 instantly when
   // blocked, so no slow timeout. If it's reachable, the rest of Binance is too.
-  $b = http_get("https://data-api.binance.vision/api/v3/klines?symbol=$symbol&interval=$interval&limit=$limit", $code, $err);
-  if (ok($b, $code) && isset($b[0]) && $b[0] === '[') return $b;   // already Binance shape
-  return null;
+  $u = "https://data-api.binance.vision/api/v3/klines?symbol=$symbol&interval=$interval&limit=" . min(1000, $limit);
+  if ($end) $u .= "&endTime=" . $end;
+  $b = http_get($u, $code, $err);
+  if (!ok($b, $code) || !isset($b[0]) || $b[0] !== '[') return null;
+  $j = json_decode($b, true); if (!is_array($j)) return null;
+  $rows = [];                                  // Binance: already oldest-first [openTime,o,h,l,c,vol,...]
+  foreach ($j as $r) $rows[] = [(int)$r[0], $r[1], $r[2], $r[3], $r[4], $r[5] ?? "0"];
+  return $rows;
 }
-function p_bybit($symbol, $ivKey, $limit, &$code, &$err) {
+function p_bybit($symbol, $ivKey, $limit, $end, &$code, &$err) {
   global $IV;
   $iv = $IV['bybit'][$ivKey];
-  $b = http_get("https://api.bybit.com/v5/market/kline?category=spot&symbol=$symbol&interval=$iv&limit=" . min(1000,$limit), $code, $err);
+  $u = "https://api.bybit.com/v5/market/kline?category=spot&symbol=$symbol&interval=$iv&limit=" . min(1000, $limit);
+  if ($end) $u .= "&end=" . $end;
+  $b = http_get($u, $code, $err);
   if (!ok($b, $code)) return null;
   $j = json_decode($b, true);
   $list = $j['result']['list'] ?? null;
   if (!$list) return null;
-  $rows = [];                                  // Bybit: newest-first [start,o,h,l,c,vol,turnover]
+  $rows = [];                                  // Bybit: newest-first [start,o,h,l,c,vol,turnover] -> reverse to ASC
   foreach (array_reverse($list) as $r) $rows[] = [(int)$r[0], $r[1], $r[2], $r[3], $r[4], $r[5] ?? "0"];
-  return json_encode($rows);
+  return $rows;
 }
-function p_okx($dash, $ivKey, $limit, &$code, &$err) {
+function p_okx($dash, $ivKey, $limit, $end, &$code, &$err) {
   global $IV;
   $iv = $IV['okx'][$ivKey];
-  $b = http_get("https://www.okx.com/api/v5/market/candles?instId=$dash&bar=$iv&limit=" . min(300,$limit), $code, $err);
+  $u = "https://www.okx.com/api/v5/market/candles?instId=$dash&bar=$iv&limit=" . min(300, $limit);
+  if ($end) $u .= "&after=" . $end;            // OKX 'after' = records older than this ts
+  $b = http_get($u, $code, $err);
   if (!ok($b, $code)) return null;
   $j = json_decode($b, true);
   $data = $j['data'] ?? null;
   if (!$data) return null;
-  $rows = [];                                  // OKX: newest-first [ts,o,h,l,c,vol,...]
+  $rows = [];                                  // OKX: newest-first [ts,o,h,l,c,vol,...] -> reverse to ASC
   foreach (array_reverse($data) as $r) $rows[] = [(int)$r[0], $r[1], $r[2], $r[3], $r[4], $r[5] ?? "0"];
-  return json_encode($rows);
+  return $rows;
 }
-function p_kucoin($dash, $ivKey, $limit, &$code, &$err) {
-  global $IV;
+function p_kucoin($dash, $ivKey, $limit, $end, &$code, &$err) {
+  global $IV, $TFSEC;
   $iv = $IV['kucoin'][$ivKey];
-  $b = http_get("https://api.kucoin.com/api/v1/market/candles?type=$iv&symbol=$dash", $code, $err);
+  $u = "https://api.kucoin.com/api/v1/market/candles?type=$iv&symbol=$dash";
+  if ($end) {                                  // KuCoin paginates by startAt/endAt (seconds)
+    $endSec = intdiv($end, 1000);
+    $u .= "&endAt=$endSec&startAt=" . ($endSec - min(1500, $limit) * $TFSEC[$ivKey]);
+  }
+  $b = http_get($u, $code, $err);
   if (!ok($b, $code)) return null;
   $j = json_decode($b, true);
   $data = $j['data'] ?? null;
   if (!$data) return null;
-  $rows = [];                                  // KuCoin: newest-first [time(s),open,close,high,low,vol,turnover]
+  $rows = [];                                  // KuCoin: newest-first [time(s),open,close,high,low,...] -> ASC
   foreach (array_reverse($data) as $r) $rows[] = [((int)$r[0]) * 1000, $r[1], $r[3], $r[4], $r[2], $r[5] ?? "0"];
-  $rows = array_slice($rows, -$limit);
-  return json_encode($rows);
+  return $rows;
 }
 
 /* ---------- ticker providers: each returns a price string or null ---------- */
@@ -149,11 +164,11 @@ function order_with_cache($key) {                       // cached winner first, 
   if ($hit) { array_unshift($all, $hit); $all = array_values(array_unique($all)); }
   return $all;
 }
-function run_klines($name, $symbol, $dash, $interval, $limit, &$c, &$e) {
-  if ($name === 'binance') return p_binance($symbol, $interval, $limit, $c, $e);
-  if ($name === 'bybit')   return p_bybit($symbol, $interval, $limit, $c, $e);
-  if ($name === 'okx')     return p_okx($dash, $interval, $limit, $c, $e);
-  if ($name === 'kucoin')  return p_kucoin($dash, $interval, $limit, $c, $e);
+function run_klines($name, $symbol, $dash, $interval, $limit, $end, &$c, &$e) {
+  if ($name === 'binance') return p_binance($symbol, $interval, $limit, $end, $c, $e);
+  if ($name === 'bybit')   return p_bybit($symbol, $interval, $limit, $end, $c, $e);
+  if ($name === 'okx')     return p_okx($dash, $interval, $limit, $end, $c, $e);
+  if ($name === 'kucoin')  return p_kucoin($dash, $interval, $limit, $end, $c, $e);
   return null;
 }
 function run_ticker($name, $symbol, $dash, &$c, &$e) {
@@ -182,11 +197,29 @@ if ($path === 'diag') {
   exit;
 }
 
-/* ---------- klines ---------- */
+/* ---------- klines (single page, or deep history paginated backward) ---------- */
 if ($path === 'klines') {
+  $deep = !empty($_GET['deep']);
+  $want = $deep ? min(6000, max($limit, 1000)) : $limit;
   foreach (order_with_cache('klines') as $name) {
-    $r = run_klines($name, $symbol, $dash, $interval, $limit, $c, $e);
-    if ($r !== null) { src_set('klines', $name); header("X-RTM-Source: $name"); echo $r; exit; }
+    $pageMax = ($name === 'okx') ? 300 : 1000;
+    $byTs = []; $end = 0; $guard = 0;
+    do {
+      $page = run_klines($name, $symbol, $dash, $interval, $pageMax, $end, $c, $e);
+      if ($page === null || !count($page)) break;
+      foreach ($page as $row) $byTs[$row[0]] = $row;     // dedup by timestamp
+      if (count($page) < $pageMax) break;                // source has no older data
+      $end = $page[0][0] - 1;                            // page is ASC -> oldest bar is [0]
+    } while ($deep && count($byTs) < $want && ++$guard < 12);
+    if ($byTs) {
+      src_set('klines', $name);
+      ksort($byTs);                                       // chronological
+      $rows = array_values($byTs);
+      if (count($rows) > $want) $rows = array_slice($rows, -$want);
+      header("X-RTM-Source: $name");
+      if ($deep) header('Cache-Control: public, max-age=300');   // deep history barely changes
+      echo json_encode($rows); exit;
+    }
   }
   http_response_code(502); echo json_encode(['__error' => 'upstream unreachable']); exit;
 }
