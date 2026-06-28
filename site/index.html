@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>دستیار معاملاتی RTM</title>
+  <link rel="stylesheet" href="/fonts.css" />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">ر</span>
+      <div>
+        <div class="title">دستیار معاملاتی RTM</div>
+        <div class="subtitle">موتورِ قطعیِ بک‌تست‌شده · فقط تحلیل، بدون اجرای سفارش</div>
+      </div>
+    </div>
+    <div class="controls">
+      <select id="symbolSel" title="نماد"></select>
+      <div id="tfGroup" class="tf-group"></div>
+      <div class="price-box">
+        <span class="px-label">قیمت</span>
+        <span id="livePrice" class="px live-pulse">—</span>
+        <span id="delayedTag" class="delayed-tag" hidden>~تأخیری</span>
+      </div>
+      <button id="refreshBtn" title="بروزرسانی">⟳</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="chart-col">
+      <div id="verdict" class="verdict" hidden></div>
+      <div id="tfHealth" class="tf-health"></div>
+      <div id="chart">
+        <div id="zonePop" class="zone-pop" hidden></div>
+      </div>
+      <div class="legend">
+        <span class="lg dem">تقاضا (خرید)</span>
+        <span class="lg sup">عرضه (فروش)</span>
+        <span class="lg fl">فلگ‌لیمیت (مکمل)</span>
+        <span class="lg entry">ورود</span>
+        <span class="lg sl">استاپ</span>
+        <span class="lg tp">تارگت</span>
+        <span class="lg rsi">RSI</span>
+        <span class="lg div">واگرایی</span>
+        <span class="lg proj">پیش‌بینیِ روند</span>
+        <span class="lg react">واکنش به ناحیه</span>
+        <span class="lg brk">شکستِ ناحیه</span>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-actions">
+        <button id="analyzeBtn" class="primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-2px;margin-inline-end:6px"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>تحلیل کن
+        </button>
+        <button id="logBtn" title="ثبت این ستاپ در ژورنال">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-2px;margin-inline-end:5px"><path d="M12 5v14M5 12h14"/></svg>ثبت در ژورنال
+        </button>
+      </div>
+      <div id="assistant" class="assistant">برای دریافت تحلیل، دکمهٔ «تحلیل کن» را بزن.</div>
+
+      <div class="journal">
+        <div class="journal-head">
+          <h3>ژورنال و یادگیری</h3>
+          <div id="journalStats" class="jstats"></div>
+        </div>
+        <div id="journalList" class="journal-list"></div>
+      </div>
+    </aside>
+  </main>
+
+  <script>window.RTM_STATIC=true;</script>
+  <script src="/app.js"></script>
+</body>
+</html>

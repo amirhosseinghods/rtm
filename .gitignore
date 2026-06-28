@@ -1,0 +1,33 @@
+# --- transient / large: NOT synced ---
+web/data/*.csv
+web/data/hist/*.csv
+web/learning/*.log
+web/learning/*.err
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- cPanel: per-host secrets + runtime ---
+cpanel/config.sh
+tmp/
+passenger.log
+# installer-generated, host-specific or secret — never commit
+config.local.php
+.htpasswd
+.htaccess
+.installed
+web/learning/cron.log
+
+# --- DO sync the accumulated learning the optimizer needs (force-include) ---
+!web/learning/snapshots.jsonl
+!web/learning/predictions.jsonl
+!web/learning/setups.jsonl
+!web/tuned.json
+
+# site (static host) secrets
+site/config.local.php
+site/.htpasswd
+site/.htaccess
+site/.installed
+site/data/pull.log

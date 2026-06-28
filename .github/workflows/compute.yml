@@ -1,0 +1,42 @@
+name: compute
+
+# Runs the Python engine on GitHub's free runners (host needs no Python), writes the
+# signal JSON into site/data/, advances the learning loop, and commits it back. The PHP
+# host serves site/ and pulls these updates.
+on:
+  schedule:
+    - cron: "*/15 * * * *"     # every 15 min (public repo = unlimited Actions minutes)
+  workflow_dispatch: {}         # manual "Run workflow" button
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: compute
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build signal JSON + advance learning
+        env:
+          RTM_DATA_DIR: web/data
+          RTM_TFS: "M5,M15,H1"
+        run: python web/build_static.py
+      - name: Commit results
+        run: |
+          git config user.name  "rtm-bot"
+          git config user.email "rtm-bot@users.noreply.github.com"
+          git add -A site/data web/learning web/tuned.json
+          git diff --cached --quiet || git commit -m "compute $(date -u +%FT%TZ)"
+          git pull --rebase --autostash || true
+          git push

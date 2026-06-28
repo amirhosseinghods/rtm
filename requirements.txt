@@ -1,0 +1,7 @@
+fastapi
+a2wsgi
+yfinance
+requests
+pandas
+numpy
+uvicorn

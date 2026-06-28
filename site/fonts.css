@@ -1,0 +1,22 @@
+/* IRAN Yekan Pro V3.0 — UI weights + a monospaced-numeral family for prices.
+   TTF served from /fonts/ (static mount). */
+@font-face { font-family: "IRANYekan"; font-weight: 300; font-display: swap;
+  src: url("/fonts/IRANYekanLight.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekan"; font-weight: 400; font-display: swap;
+  src: url("/fonts/IRANYekanRegular.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekan"; font-weight: 500; font-display: swap;
+  src: url("/fonts/IRANYekanMedium.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekan"; font-weight: 700; font-display: swap;
+  src: url("/fonts/IRANYekanBold.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekan"; font-weight: 800; font-display: swap;
+  src: url("/fonts/IRANYekanExtraBold.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekan"; font-weight: 900; font-display: swap;
+  src: url("/fonts/IRANYekanBlack.ttf") format("truetype"); }
+
+/* Monospaced numerals — for prices, R:R, table figures (tabular alignment). */
+@font-face { font-family: "IRANYekanNum"; font-weight: 400; font-display: swap;
+  src: url("/fonts/IRANYekanRegularMsn.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekanNum"; font-weight: 500; font-display: swap;
+  src: url("/fonts/IRANYekanMediumMsn.ttf") format("truetype"); }
+@font-face { font-family: "IRANYekanNum"; font-weight: 700; font-display: swap;
+  src: url("/fonts/IRANYekanBoldMsn.ttf") format("truetype"); }

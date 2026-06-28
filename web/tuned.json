@@ -1,0 +1,30 @@
+{
+  "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
+  "updated": "2026-06-27 23:09 UTC",
+  "combo_min": 2,
+  "risk_low_max": 1,
+  "risk_med_max": 3,
+  "conf_blend": 0.5,
+  "reversal_enabled": true,
+  "reversal_edge": {
+    "expR": 0.143,
+    "wr": 28.6,
+    "n": 224,
+    "rr": 3.0
+  },
+  "per_symbol_dir_rate": {
+    "PAXGUSDT|M5": 0.467,
+    "BTCUSDT|M5": 0.562,
+    "ETHUSDT|M5": 0.472,
+    "XRPUSDT|M5": 0.46,
+    "SOLUSDT|M5": 0.441,
+    "BNBUSDT|M5": 0.476,
+    "ADAUSDT|M5": 0.498,
+    "DOGEUSDT|M5": 0.492,
+    "AVAXUSDT|M5": 0.465,
+    "LINKUSDT|M5": 0.468,
+    "LTCUSDT|M5": 0.499,
+    "DOTUSDT|M5": 0.487,
+    "XAUUSD|M5": 0.465
+  }
+}
