@@ -5,6 +5,35 @@
   "risk_low_max": 1,
   "risk_med_max": 3,
   "conf_blend": 0.5,
+  "zones": {
+    "_note": "Non-overlapping zone rendering. merge keeps the higher-TF / higher-grade zone when two of the same kind overlap; max_per_side caps how many demand/supply zones are drawn (nearest-first).",
+    "merge": true,
+    "max_per_side": 3
+  },
+  "partial": {
+    "_note": "Validated partial-exit ladder (backtest 10-agent fan-out, 2026-06-29): HTF zone + room>=2R + bank 1/3 at 0.5R -> move stop to break-even -> runner to 2R gives ~70% NET win-rate, PF 1.92, expR +0.276 (OOS-stable). tp1_R is the scale-out level in R. Delete this key to revert to plain 2R.",
+    "tp1_R": 0.5,
+    "tp1_frac": 0.3333,
+    "move_be": true,
+    "tp2_R": 2.0
+  },
+  "selectivity": {
+    "_note": "Gate for the BUY_NOW/SELL_NOW verdict — the >=70% operating point. Only HTF (OB-1h/FL-1h) zones with >=room_min R of clear room and no behavioural-model veto fire an actionable signal; weaker zones still render for context.",
+    "room_min": 2.0,
+    "require_htf": true,
+    "use_model_gate": true
+  },
+  "stops": {
+    "_note": "SL geometry, learned per source/symbol by optimize.run() from MFE/MAE of resolved setups. buf_atr = breathing room beyond the zone (xATR); min_atr = floor stop distance (xATR). disabled_sources are auto-muted when their stop-rate stays high with negative expR. Delete this key to revert to hardcoded buf=0.3 / minStop.",
+    "buf_atr": {
+      "default": 0.3
+    },
+    "min_atr": {
+      "default": 1.0,
+      "XAUUSD": 2.5
+    },
+    "disabled_sources": []
+  },
   "reversal_enabled": false,
   "reversal_edge": {
     "expR": -0.832,

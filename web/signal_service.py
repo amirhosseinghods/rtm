@@ -137,9 +137,11 @@ def _risk(z, rsi_last):
 
 def _zref(z):
     return {k: z.get(k) for k in ("action", "action_fa", "dir", "src", "confidence",
-                                  "bot", "top", "entry", "sl", "tp2", "tp3", "dist_atr", "room_R",
+                                  "bot", "top", "entry", "sl", "tp1", "tp2", "tp3", "partial",
+                                  "dist_atr", "room_R",
                                   "combo_score", "combo_confirmed", "combo_styles",
-                                  "setup_type", "rev_target")} | {
+                                  "setup_type", "rev_target",
+                                  "model_p_up", "model_agree", "model_against", "model_gate")} | {
         "risk_level": z["risk_rating"]["level"]}
 
 
@@ -147,14 +149,31 @@ def _verdict(zones, primary, price, atr, rstate, tf):
     """The headline answer: buy now / sell now / wait — so the user knows what to DO."""
     order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     rank = {"کم": 0, "متوسط": 1, "زیاد": 2}
-    ready = [z for z in zones if z["actionable_now"] and z["confidence"] != "LOW"
-             and z["risk_rating"]["level"] != "زیاد"]
+    # selectivity gate = the validated >=70%-winrate operating point: HTF zone + clear room +
+    # no behavioural-model veto. Weaker zones still render for context but don't fire a signal.
+    sel = TUNED().get("selectivity", {})
+    rmin = float(sel.get("room_min", 2.0)); need_htf = bool(sel.get("require_htf", True))
+    def passes(z):
+        if not (z["actionable_now"] and z["confidence"] != "LOW" and z["risk_rating"]["level"] != "زیاد"):
+            return False
+        if need_htf and not str(z["src"]).endswith("-1h"):
+            return False
+        if z.get("room_R") is not None and z["room_R"] < rmin:
+            return False
+        if z.get("model_against"):
+            return False
+        return True
+    ready = [z for z in zones if passes(z)]
     if ready:
         ready.sort(key=lambda z: (order[z["confidence"]], rank[z["risk_rating"]["level"]]))
         z = ready[0]
         state = "BUY_NOW" if z["action"] == "BUY" else "SELL_NOW"
+        pp = z.get("partial") or {}
+        scale_txt = (f" برنامهٔ خروجِ پله‌ای: ۱/۳ در {pp.get('scale_price')} (~{pp.get('scale_R')}R)، "
+                     f"استاپ به نقطهٔ سربه‌سر، بقیه تا {pp.get('runner_tp')} (~{pp.get('runner_R')}R)."
+                     if pp else "")
         txt = (f"الان قیمت داخل/کنارِ ناحیهٔ {z['action_fa']} است — آمادهٔ ورود. "
-               f"ورود ~{z['entry']}، استاپ {z['sl']}، هدفِ اصلی TP2 {z['tp2']}. "
+               f"ورود ~{z['entry']}، استاپ {z['sl']}.{scale_txt} "
                f"ریسکِ این ناحیه: {z['risk_rating']['level']}. اول تأییدیهٔ کندلی بگیر.")
         return {"state": state, "action": z["action"], "action_fa": z["action_fa"],
                 "risk_level": z["risk_rating"]["level"], "zone": _zref(z), "text": txt}
@@ -189,25 +208,80 @@ def _verdict(zones, primary, price, atr, rstate, tf):
     return {"state": "WAIT", "action": None, "zone": zref, "text": txt}
 
 
-def _plan(dr, zt, zb, price, atr, gold):
-    """Build entry/SL/TP (R-grid) for a zone. Entry = proximal edge (limit)."""
-    buf = 0.3
-    minStop = 2.5 if gold else 1.0
+def _stops(sym, src):
+    """SL geometry from tuned.json (learned per source/symbol), falling back to defaults."""
+    s = TUNED().get("stops", {})
+    bufm = s.get("buf_atr", {}) if isinstance(s.get("buf_atr"), dict) else {}
+    minm = s.get("min_atr", {}) if isinstance(s.get("min_atr"), dict) else {}
+    buf = float(bufm.get(src, bufm.get("default", 0.3)))
+    minStop = float(minm.get(sym, minm.get("default", 1.0)))
+    return buf, minStop
+
+
+def _plan(dr, zt, zb, price, atr, sym, src):
+    """Build entry/SL/TP for a zone. Entry = proximal edge (limit). Emits both the R-grid
+    (tp1=1R, tp2=2R, tp3=3R — for the chart/tests) AND the validated partial-exit ladder
+    (`partial`): bank tp1_frac at tp1_R, move stop to break-even, runner to tp2_R."""
+    buf, minStop = _stops(sym, src)
     if dr == 1:           # demand / long: proximal edge = top
         entry = zt
         sl = min(zb - buf * atr, entry - minStop * atr)
         risk = entry - sl
         if risk <= 0: return None
-        tps = [round(entry + k * risk, 6) for k in (1, 2, 3)]
+        sgn = 1
     else:                 # supply / short: proximal edge = bottom
         entry = zb
         sl = max(zt + buf * atr, entry + minStop * atr)
         risk = sl - entry
         if risk <= 0: return None
-        tps = [round(entry - k * risk, 6) for k in (1, 2, 3)]
+        sgn = -1
+    tps = [round(entry + sgn * k * risk, 6) for k in (1, 2, 3)]
+    # partial-exit ladder (the >=70%-winrate plan)
+    pt = TUNED().get("partial", {})
+    tp1R = float(pt.get("tp1_R", 0.5)); frac = float(pt.get("tp1_frac", 0.3333))
+    runnerR = (float(pt.get("tp2_R", 2.0)) if pt.get("tp2_R") != "struct" else 2.0)
+    move_be = bool(pt.get("move_be", True))
+    partial = dict(
+        scale_R=tp1R, scale_frac=round(frac, 4),
+        scale_price=round(entry + sgn * tp1R * risk, 6),
+        move_be=move_be, be_price=round(entry, 6),
+        runner_R=runnerR, runner_tp=round(entry + sgn * runnerR * risk, 6),
+        full_R=round(frac * tp1R + (1 - frac) * runnerR, 3))
     return dict(entry=round(entry, 6), sl=round(sl, 6),
                 tp1=tps[0], tp2=tps[1], tp3=tps[2], risk=round(risk, 6),
+                partial=partial,
                 dist_atr=round(abs(price - entry) / atr, 2) if atr else None)
+
+
+# source priority for de-overlap: H1 order-block > H1 flag-limit > M15 order-block
+_SRC_RANK = {"OB-1h": 3, "FL-1h": 2, "OB-15m": 1}
+
+
+def merge_overlapping(zones, price):
+    """Keep zones NON-OVERLAPPING within each kind (demand/supply). Port of
+    backtest/multizone.py: when two same-direction zones overlap, keep the one with the
+    higher source rank (HTF first), then higher grade, then nearer to price, then wider.
+    Optionally clamp to the nearest N per side. Toggleable via tuned.json `zones`."""
+    zc = TUNED().get("zones", {})
+    if not zc.get("merge", True):
+        return zones
+
+    def key(z):
+        return (-_SRC_RANK.get(z["src"], 0), -int(z.get("grade") or 0),
+                abs(price - z["entry"]), -(z["top"] - z["bot"]))
+
+    kept = []
+    for z in sorted(zones, key=key):
+        if any(z["dir"] == k["dir"] and not (z["top"] < k["bot"] or z["bot"] > k["top"])
+               for k in kept):
+            continue
+        kept.append(z)
+    n = zc.get("max_per_side")
+    if n:
+        dem = sorted([z for z in kept if z["dir"] == "LONG"], key=lambda z: abs(price - z["entry"]))[:n]
+        sup = sorted([z for z in kept if z["dir"] == "SHORT"], key=lambda z: abs(price - z["entry"]))[:n]
+        kept = dem + sup
+    return kept
 
 
 def compute(sym, tf="M5"):
@@ -228,7 +302,10 @@ def compute(sym, tf="M5"):
 
     # ---- gather active zones ----
     zones = []
+    _disabled = set(TUNED().get("stops", {}).get("disabled_sources", []))
     def add(kind, dr, zt, zb, g, src):
+        if src in _disabled:                       # source auto-muted by stop-learning
+            return
         if zt is None or zb is None or np.isnan(zt) or np.isnan(zb) or zt <= zb:
             return
         # drop MITIGATED zones (price already closed through them -> dead):
@@ -238,7 +315,7 @@ def compute(sym, tf="M5"):
             return
         if dr == -1 and price > zt:
             return
-        plan = _plan(dr, zt, zb, price, a, gold)
+        plan = _plan(dr, zt, zb, price, a, sym, src)
         if not plan:
             return
         # room to opposing zone in R (use the same-source opposing edge if present)
@@ -253,6 +330,9 @@ def compute(sym, tf="M5"):
     fdT, fdB, fdG, fsT, fsB, fsG = _fl_zone(sym)
     add("demand", 1, fdT, fdB, fdG, "FL-1h")
     add("supply", -1, fsT, fsB, fsG, "FL-1h")
+
+    # de-overlap: never stack two same-kind zones (keep HTF/higher-grade/nearer/wider)
+    zones = merge_overlapping(zones, price)
 
     # room (R to nearest opposing zone) + confidence tier per zone
     sup_bots = [z["bot"] for z in zones if z["dir"] == "SHORT" and z["bot"] > price]
@@ -305,6 +385,31 @@ def compute(sym, tf="M5"):
     dp_vote = 1 if disc else (-1 if prem else 0)
     rsi_vote = rstate.get("pull", 0)
     STYLES = [("RSI ۳۰/۷۰", rsi_vote), ("تخفیف/پریمیوم", dp_vote), ("واگرایی", div_vote)]
+
+    # ---- behavioural future-prediction gate ----
+    # The per-TF logistic (projection_model) votes a direction with an honest abstention band
+    # (tau). A zone the model CONTRADICTS is demoted to LOW (won't fire BUY_NOW); a MEDIUM zone
+    # the model AGREES with (with room) is promoted to HIGH. Legacy behaviour when no model.
+    tfmin0 = B.TF_MIN.get(tf, 5)
+    model = TUNED().get("projection_model")
+    p_up = RT.proj_predict(model, c, atr, rsi_last, divs, biasv, tfmin0) if model else None
+    tau = float(((model or {}).get(RT._proj_tf_key(tfmin0), {}) or {}).get("tau", 0.0))
+    use_gate = TUNED().get("selectivity", {}).get("use_model_gate", True)
+    if p_up is not None and use_gate:
+        for z in zones:
+            pv = 1 if z["dir"] == "LONG" else -1
+            agree = (p_up >= 0.5 + tau) if pv == 1 else (p_up <= 0.5 - tau)
+            against = (p_up <= 0.5 - tau) if pv == 1 else (p_up >= 0.5 + tau)
+            z["model_p_up"] = round(float(p_up), 4)
+            z["model_agree"] = bool(agree)
+            z["model_against"] = bool(against)
+            if against:
+                z["confidence"] = "LOW"; z["model_gate"] = "veto"
+            elif agree and z["confidence"] == "MEDIUM" and z.get("with_trend") \
+                    and (z.get("room_R") is None or z["room_R"] >= 2):
+                z["confidence"] = "HIGH"; z["model_gate"] = "boost"
+            else:
+                z["model_gate"] = "neutral"
 
     # ---- per-zone action + actionable-now + confluence + risk ----
     for z in zones:

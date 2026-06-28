@@ -38,11 +38,13 @@ async function api(p) {
   if (p.startsWith("/api/signal")) return fetch(`data/sig_${q.get("symbol")}_${q.get("tf")}.json`).then((r) => r.json()).then((d) => d.signal);
   if (p.startsWith("/api/assistant")) return fetch(`data/sig_${q.get("symbol")}_${q.get("tf")}.json`).then((r) => r.json());
   if (p.startsWith("/api/quote")) return staticQuote(q.get("symbol"));
-  if (p.startsWith("/api/journal")) return fetch("journal.php").then((r) => r.json()).catch(() => ({ entries: [] }));
+  if (p.startsWith("/api/journal")) return fetch("journal.php").then(authGuard).then((r) => r.json()).catch(() => ({ entries: [] }));
   return {};
 }
+// a 401 means the session expired -> bounce to the login page
+function authGuard(r) { if (r && r.status === 401) { location.href = "login.php"; throw new Error("auth"); } return r; }
 const post = (p, body) => STATIC
-  ? fetch("journal.php", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => ({ ok: false }))
+  ? fetch("journal.php", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF": window.RTM_CSRF || "" }, body: JSON.stringify(body) }).then(authGuard).then((r) => r.json()).catch(() => ({ ok: false }))
   : fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 
 async function staticQuote(sym) {
@@ -232,9 +234,16 @@ function drawZoneLines(z) {
   STATE.activeZone = z;
   pline(z.entry, C.blue, "solid", "ورود");
   pline(z.sl, C.red, "dash", "استاپ");
-  if (z.tp1 != null) pline(z.tp1, C.green, "dash", "TP1");
-  pline(z.tp2, C.green, "solid", "TP2 (2R)");
-  if (z.tp3 != null) pline(z.tp3, C.green, "dash", "TP3");
+  const p = z.partial;
+  if (p) {
+    // validated partial-exit plan: bank 1/3 at scale_R, move stop to break-even, runner to 2R
+    pline(p.scale_price, C.gold, "dash", `خروجِ ۱/۳ (${p.scale_R}R)`);
+    if (p.move_be) pline(p.be_price, C.gold, "dash", "سربه‌سر پس از پله");
+    pline(p.runner_tp, C.green, "solid", `هدفِ رانر (${p.runner_R}R)`);
+  } else {
+    pline(z.tp2, C.green, "solid", "TP2 (2R)");
+  }
+  if (z.tp3 != null) pline(z.tp3, C.green, "dash", "TP3 (3R)");
 }
 
 /* ---------- data loading ---------- */

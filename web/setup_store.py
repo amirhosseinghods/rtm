@@ -73,27 +73,33 @@ def record(sig, now=None):
 
 def _simulate(s, t, h, l, c):
     """Replay forward OHLC: fill the entry (limit), then SL vs 2R-target, first touch wins.
-    Returns (status, R, exit_ts) or None if still unresolved within the window."""
+    Also tracks MFE/MAE (R) and bars-to-stop so we can LEARN FROM THE STOPS we hit.
+    Returns (status, R, exit_ts, mfe_R, mae_R, bars_to_stop) or None if unresolved."""
     dr = 1 if s["dir"] == "LONG" else -1
     entry, sl, tp = s["entry"], s["sl"], s["tp2"]
-    filled = False
+    risk = s.get("risk") or abs(entry - sl) or None
+    filled = False; mfe = 0.0; mae = 0.0; fbar = 0
     for j in range(min(len(t), MAXBARS)):
         if not filled:
             hit_entry = (l[j] <= entry) if dr == 1 else (h[j] >= entry)
             if not hit_entry:
                 continue
-            filled = True
+            filled = True; fbar = j
+        if risk:
+            fav = ((h[j] - entry) / risk) if dr == 1 else ((entry - l[j]) / risk)
+            adv = ((entry - l[j]) / risk) if dr == 1 else ((h[j] - entry) / risk)
+            mfe = max(mfe, fav); mae = max(mae, adv)
         if dr == 1:
             hit_sl, hit_tp = (l[j] <= sl), (h[j] >= tp)
         else:
             hit_sl, hit_tp = (h[j] >= sl), (l[j] <= tp)
         if hit_sl:                       # conservative: stop takes priority on a same-bar tie
-            return ("LOSS", -1.0, int(t[j]))
+            return ("LOSS", -1.0, int(t[j]), round(mfe, 2), round(mae, 2), j - fbar)
         if hit_tp:
-            return ("WIN", 2.0, int(t[j]))
+            return ("WIN", 2.0, int(t[j]), round(mfe, 2), round(mae, 2), None)
     # ran out of bars: if it never even filled and the window is used up, expire it
     if not filled and len(t) >= MAXBARS:
-        return ("EXPIRED", None, int(t[min(len(t), MAXBARS) - 1]))
+        return ("EXPIRED", None, int(t[min(len(t), MAXBARS) - 1]), 0.0, 0.0, None)
     return None
 
 
@@ -112,7 +118,7 @@ def resolve(now=None):
         out = _simulate(s, *fp)
         if out is None:
             continue
-        s["status"], s["R"], s["exit_ts"] = out
+        s["status"], s["R"], s["exit_ts"], s["mfe_R"], s["mae_R"], s["bars_to_stop"] = out
         changed += 1
         wins += s["status"] == "WIN"; losses += s["status"] == "LOSS"
     if changed:
@@ -175,6 +181,7 @@ def train_from_history(symbols=None, tf="M5"):
                 "setup_type": "trend" if r.get("withtrend") else "reversal",
                 "entry": None, "sl": None, "tp2": None, "risk": r.get("risk"),
                 "status": "WIN" if R > 0 else "LOSS", "R": float(R),
+                "mfe_R": r.get("mfe"), "mae_R": r.get("mae"), "bars_to_stop": r.get("bars_to_stop"),
                 "exit_ts": None, "origin": "train",
             })
             added += 1
@@ -206,6 +213,47 @@ def lessons():
                 continue
             groups.setdefault(str(v), []).append(r)
         out["by"][f] = {k: _agg(v) for k, v in groups.items() if len(v) >= 20}
+    return out
+
+
+def _median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    if n == 0: return None
+    return xs[n // 2] if n % 2 else round((xs[n // 2 - 1] + xs[n // 2]) / 2, 3)
+
+
+def _agg_stops(rows):
+    """Stop diagnostics for a group: stop-rate, plus WHY the stops happened —
+    sweep_frac (stopped at MFE<0.3R = stop too tight / liquidity sweep) vs
+    giveback_frac (reached >=1R then reversed = stop too loose / exit too late)."""
+    rows = [r for r in rows if r["status"] in ("WIN", "LOSS") and r.get("mfe_R") is not None]
+    n = len(rows)
+    if n < 1: return None
+    stops = [r for r in rows if r["status"] == "LOSS"]
+    ns = len(stops)
+    sweep = [r for r in stops if r["mfe_R"] < 0.3]
+    gb = [r for r in stops if r["mfe_R"] >= 1.0]
+    Rs = [r["R"] for r in rows if r.get("R") is not None]
+    return {"n": n, "stops": ns, "stop_rate": round(100 * ns / n, 1),
+            "sweep_frac": round(len(sweep) / ns, 3) if ns else 0.0,
+            "giveback_frac": round(len(gb) / ns, 3) if ns else 0.0,
+            "median_mfe_stop": _median([r["mfe_R"] for r in stops]),
+            "expR": round(sum(Rs) / len(Rs), 3) if Rs else None}
+
+
+def lessons_stops(min_n=20):
+    """Learn FROM THE STOPS: per source / symbol / combo, are stops sweeps (too tight) or
+    givebacks (too loose)? optimize.run() reads this to widen/tighten stops.* per source."""
+    rows = [r for r in _read() if r["status"] in ("WIN", "LOSS") and r.get("mfe_R") is not None]
+    out = {"overall": _agg_stops(rows), "by_src": {}, "by_symbol": {}, "by_combo": {}}
+    for key, field in (("by_src", "src"), ("by_symbol", "symbol"), ("by_combo", "combo_confirmed")):
+        groups = {}
+        for r in rows:
+            v = r.get(field)
+            if v is None: continue
+            groups.setdefault(str(v), []).append(r)
+        out[key] = {k: _agg_stops(v) for k, v in groups.items() if len(v) >= min_n}
     return out
 
 

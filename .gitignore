@@ -31,3 +31,6 @@ site/.htpasswd
 site/.htaccess
 site/.installed
 site/data/pull.log
+web/data/*.jsonl
+backtest/*_rows.csv
+backtest/bt_agent*.csv

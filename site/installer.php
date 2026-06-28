@@ -24,15 +24,20 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$installed) {
   $su=trim($_POST['site_user']??''); $sp=(string)($_POST['site_pass']??'');
   $repo=trim($_POST['gh_repo']??''); $mins=max(10,(int)($_POST['mins']??15));
 
-  // 1) DB
+  // 1) DB + schema migration + first ADMIN account
   try {
     $m=@new mysqli($dbh,$dbu,$dbp,$dbn);
     if($m->connect_errno) throw new Exception($m->connect_error);
-    $m->query("CREATE TABLE IF NOT EXISTS rtm_users (username VARCHAR(64) PRIMARY KEY, pass_hash VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    $m->query("CREATE TABLE IF NOT EXISTS rtm_config (k VARCHAR(64) PRIMARY KEY, v TEXT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    if($su&&$sp){ $ph=password_hash($sp,PASSWORD_BCRYPT); $st=$m->prepare("REPLACE INTO rtm_users (username,pass_hash) VALUES (?,?)"); $st->bind_param('ss',$su,$ph); $st->execute(); }
+    require __DIR__.'/migrate.php'; rtm_migrate($m);                 // idempotent multi-user schema
+    if($su&&$sp){
+      $ph=password_hash($sp,PASSWORD_BCRYPT);
+      $st=$m->prepare("INSERT INTO rtm_users (username,pass_hash,role,active) VALUES (?,?, 'admin',1)
+                       ON DUPLICATE KEY UPDATE pass_hash=VALUES(pass_hash), role='admin', active=1");
+      $st->bind_param('ss',$su,$ph); $st->execute();
+      $m->query("UPDATE rtm_journal SET user_id=".($su?("'".$m->real_escape_string($su)."'"):"user_id")." WHERE user_id IS NULL");  // adopt legacy rows
+    }
     $st=$m->prepare("REPLACE INTO rtm_config (k,v) VALUES ('gh_repo',?)"); $st->bind_param('s',$repo); $st->execute();
-    $m->close(); $done[]="دیتابیس متصل و جدول‌ها ساخته شد؛ کاربرِ سایت ثبت شد.";
+    $m->close(); $done[]="دیتابیس متصل، جدول‌ها مهاجرت داده شد؛ حسابِ ادمین ساخته شد.";
   } catch(Exception $e){ $errs[]="اتصال دیتابیس ناموفق: ".$e->getMessage(); }
 
   // 2) config.local.php (used by journal.php)
@@ -42,15 +47,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !$installed) {
     else $errs[]="نوشتنِ config.local.php ناموفق.";
   }
 
-  // 3) login = Basic Auth (covers page + JSON + assets)
+  // 3) login = PHP sessions (login.php). .htaccess only denies secrets/includes; the app pages
+  //    (index.php/journal.php/admin.php) gate themselves via auth.php. Basic Auth is dropped so
+  //    multiple accounts, roles, disable/delete and a logout button can work.
   if($su&&$sp){
-    if(@file_put_contents("$ROOT/.htpasswd",$su.':'.password_hash($sp,PASSWORD_BCRYPT)."\n")!==false){
-      $ht="AuthType Basic\nAuthName \"RTM\"\nAuthUserFile \"$ROOT/.htpasswd\"\nRequire valid-user\n\n".
-          "<FilesMatch \"^(config\\.local\\.php|installer\\.php|\\.htpasswd|\\.installed)$\">\n  Require all denied\n</FilesMatch>\n";
-      @file_put_contents("$ROOT/.htaccess",$ht);
-      $done[]="ورودِ سایت ساخته شد (.htpasswd + .htaccess).";
-    } else $errs[]="نوشتنِ .htpasswd ناموفق.";
-  } else $errs[]="یوزر/پسوردِ سایت خالی است.";
+    @unlink("$ROOT/.htpasswd");
+    $ht="DirectoryIndex index.php index.html\n".
+        "<FilesMatch \"^(config\\.local\\.php|\\.htpasswd|\\.installed|db\\.php|auth\\.php|migrate\\.php)$\">\n  Require all denied\n</FilesMatch>\n".
+        "<Files \"installer.php\">\n  Require all denied\n</Files>\n".
+        "RedirectMatch 404 /\\.git\n";
+    @file_put_contents("$ROOT/.htaccess",$ht);
+    $done[]="ورودِ مبتنی بر نشست فعال شد (login.php) و دسترسیِ مستقیم به فایل‌های حساس بسته شد.";
+  } else $errs[]="یوزر/پسوردِ ادمین خالی است.";
 
   // 4) git pull cron (public repo -> no token)
   $cron="*/$mins * * * * cd ".escapeshellarg($ROOT)." && git pull --rebase --autostash >> ".escapeshellarg("$ROOT/data/pull.log")." 2>&1";
@@ -78,7 +86,7 @@ pre{background:#0e1116;border:1px solid #2a2f37;border-radius:8px;padding:10px;o
 <?php if($installed && $_SERVER['REQUEST_METHOD']!=='POST'): ?><div class="box err">قبلاً نصب شده. برای نصبِ دوباره <code>.installed</code> را حذف کن.</div><?php endif; ?>
 <?php if($done||$errs): ?><div class="box"><?php foreach($done as $d)echo "<div class='ok'>✓ ".h($d)."</div>"; foreach($errs as $e)echo "<div class='err'>✗ ".h($e)."</div>"; ?></div>
 <?php if($cron): ?><div class="box"><b>خطِ کران</b> (اگر خودکار نشد، در cPanel → Cron Jobs بگذار):<pre><?=h($cron)?></pre></div><?php endif; ?>
-<?php if(!$errs): ?><div class="box ok">آماده است. آدرسِ سایت را باز کن و با یوزر/پسورد وارد شو. <b>installer.php را حذف کن.</b></div><?php endif; ?>
+<?php if(!$errs): ?><div class="box ok">آماده است. به <code>login.php</code> برو و با حسابِ ادمین وارد شو؛ از <code>پنل مدیریت</code> کاربر بساز. <b>installer.php را حذف کن.</b></div><?php endif; ?>
 <?php endif; ?>
 <?php if(!$installed||$errs): ?>
 <form method="post">
@@ -86,8 +94,8 @@ pre{background:#0e1116;border:1px solid #2a2f37;border-radius:8px;padding:10px;o
   <b>دیتابیس MySQL</b>
   <div class="grid"><div><label>هاست</label><input name="db_host" value="localhost"></div><div><label>نام دیتابیس</label><input name="db_name" required></div>
   <div><label>یوزر دیتابیس</label><input name="db_user" required></div><div><label>پسورد دیتابیس</label><input name="db_pass" type="password"></div></div>
-  <b>ورودِ سایت</b>
-  <div class="grid"><div><label>یوزرنیم</label><input name="site_user" required></div><div><label>پسورد</label><input name="site_pass" type="password" required></div></div>
+  <b>حسابِ ادمینِ اول</b>
+  <div class="grid"><div><label>یوزرنیم</label><input name="site_user" required></div><div><label>پسورد (حداقل ۸ کاراکتر)</label><input name="site_pass" type="password" required minlength="8"></div></div>
   <b>گیت‌هاب</b>
   <label>آدرسِ ریپوی عمومی</label><input name="gh_repo" placeholder="https://github.com/you/rtm.git" required>
   <label>هر چند دقیقه pull شود</label><input name="mins" type="number" value="15" min="10">

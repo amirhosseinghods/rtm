@@ -25,6 +25,26 @@ WL = os.path.expanduser("~/Desktop/trade/backtest/watchlist.txt")
 LEARN = os.path.expanduser("~/Desktop/trade/journal/LEARNINGS.md")
 RULES = [("1R", 1.0), ("1.5R", 1.5), ("2R", 2.0), ("3R", 3.0)]   # + "struct" per-entry
 MAXBARS = 4000
+# ---- partial-exit + stop knobs (env-overridable so the 10-agent fan-out can sweep them) ----
+PARTIAL  = os.environ.get("FD_PARTIAL", "1") != "0"     # score the 1/3@1R + BE + runner ladder
+TP1_R    = float(os.environ.get("FD_TP1", "1.0"))        # partial level (in R)
+TP1_FRAC = float(os.environ.get("FD_TP1FRAC", "0.3333")) # fraction banked at TP1
+MOVE_BE  = os.environ.get("FD_BE", "1") != "0"           # move stop to entry after TP1
+RUNNER_R = float(os.environ.get("FD_RUNNER", "2.0"))     # runner target (in R) for the remaining size
+BUF_ATR  = os.environ.get("FD_BUF")                      # None = per-source default (0.3); else override ×ATR
+MINSTOP_ATR = os.environ.get("FD_MINSTOP")               # None = per-symbol default; else override ×ATR
+OUT_CSV  = os.environ.get("FD_OUT", os.path.expanduser("~/Desktop/trade/backtest/bt_structure_rows.csv"))
+
+def score_partial(mfe_R, full_win, tp1_R=TP1_R, tp1_frac=TP1_FRAC, runner_R=RUNNER_R, move_be=MOVE_BE):
+    """Realized R for the partial+BE rule (canonical, shared with the live setup_store sim).
+    mfe_R = max favorable excursion in R before the trade resolved.
+    full_win = the runner reached runner_R without being stopped first."""
+    runner = 1.0 - tp1_frac
+    if full_win:                       # tp1 banked AND runner hit target
+        return tp1_frac*tp1_R + runner*runner_R          # e.g. 1/3*1 + 2/3*2 = +1.667R
+    if mfe_R >= tp1_R:                  # tp1 banked, runner stopped at BE (or initial stop if move_be off)
+        return tp1_frac*tp1_R + (runner*0.0 if move_be else runner*(-1.0))   # e.g. +0.333R
+    return -1.0                        # never reached tp1 -> full initial stop
 
 def syms():
     if SCOPE == "all":
@@ -57,8 +77,8 @@ def collect(D, sym, sess):
     elif sess == "ny":   insess = B.ny_session(D["time"])
     else:                insess = np.ones(n, bool)
     gold = sym == "XAUUSD"
-    minStop = 2.5 if gold else 1.0
-    buf = 0.3; minGrade = 2; minATRpct = 0.15
+    minStop = (float(MINSTOP_ATR) if MINSTOP_ATR is not None else (2.5 if gold else 1.0))
+    buf = (float(BUF_ATR) if BUF_ATR is not None else 0.3); minGrade = 2; minATRpct = 0.15
     # live opposing-zone proximal edges (1h preferred, else 15m) for the structure TP
     cDt, cDb = D["c_demT"], D["c_demB"]; cSt, cSb = D["c_supT"], D["c_supB"]
     aDt, aDb = D["a_demT"], D["a_demB"]; aSt, aSb = D["a_supT"], D["a_supB"]
@@ -148,21 +168,46 @@ def collect(D, sym, sess):
             targets = [k for _, k in RULES]
             has_struct = (not np.isnan(kstruct)) and kstruct >= 0.3
             if has_struct: targets = targets + [kstruct]
-            resolved = {t: None for t in targets}; mfe = 0.0; bars_sl = None
+            resolved = {t: None for t in targets}; mfe = 0.0; mae = 0.0; bars_to_stop = None
+            # partial+BE ladder state machine (conservative SL/BE-before-TP on intra-bar ties):
+            #   stage 0 = pre-TP1 (original SL active);  stage 1 = runner after TP1 (BE stop active)
+            p_stage = 0; p_R = None; p_status = None; be = e
             for j in range(ei+1, min(ei+1+MAXBARS, n)):
                 favR = ((h[j]-e)/risk) if dr == 1 else ((e-l[j])/risk)
+                advR = ((e-l[j])/risk) if dr == 1 else ((h[j]-e)/risk)   # adverse excursion (R), how far against
                 advHit = (l[j] <= sl) if dr == 1 else (h[j] >= sl)
-                mfe = max(mfe, favR)
+                mfe = max(mfe, favR); mae = max(mae, advR)
                 for t in targets:
                     if resolved[t] is not None: continue
                     reach = favR >= t
                     if advHit and not reach: resolved[t] = ("SL", -1.0)
                     elif reach and not advHit: resolved[t] = ("TP", t)
                     elif reach and advHit: resolved[t] = ("SL", -1.0)  # conservative tie
-                if all(resolved[t] is not None for t in targets): break
+                if PARTIAL and p_R is None:
+                    if p_stage == 1:                       # runner active since a PRIOR bar
+                        be_hit = (l[j] <= be) if dr == 1 else (h[j] >= be)
+                        stop_active = be_hit if MOVE_BE else advHit
+                        runner_hit = favR >= RUNNER_R
+                        if runner_hit and not stop_active:
+                            p_R = score_partial(mfe, True);  p_status = "WIN"
+                        elif stop_active:                  # BE/runner-stop (conservative tie -> stop)
+                            p_R = score_partial(mfe, False); p_status = "PARTIAL_WIN"
+                    elif p_stage == 0:
+                        hit_tp1 = favR >= TP1_R
+                        if advHit:                         # stopped before banking TP1 (true loss)
+                            p_R = -1.0; p_status = "LOSS"; bars_to_stop = j - ei
+                        elif hit_tp1:
+                            p_stage = 1                    # banked TP1 this bar; BE active from next bar
+                done_rules = all(resolved[t] is not None for t in targets)
+                if done_rules and (not PARTIAL or p_R is not None): break
+            if PARTIAL and p_R is None:                    # ran out of bars
+                if p_stage == 1: p_R = score_partial(mfe, False); p_status = "PARTIAL_WIN"  # runner unresolved -> flat
             comm = 0.00015 * (2)   # round-trip approx in R is negligible; keep simple
             rec = dict(sym=sym, i=ei, t=D["time"][ei], half=(0 if ei < n//2 else 1), type=name, dir=dr, grade=int(ZG[i]), withtrend=int(wt),
-                       waited=int(ei - i), ztf=ztf, risk=risk, mfe=round(mfe, 2), kstruct=round(float(kstruct), 2) if has_struct else None)
+                       waited=int(ei - i), ztf=ztf, risk=risk, mfe=round(mfe, 2), mae=round(mae, 2),
+                       bars_to_stop=bars_to_stop, R_partbe=(round(p_R, 4) if p_R is not None else None),
+                       partstat=p_status, giveback=int(p_status == "PARTIAL_WIN"),
+                       kstruct=round(float(kstruct), 2) if has_struct else None)
             for nm, k in RULES:
                 r = resolved.get(k); rec[nm] = (r[1] if r else (k if mfe >= k else (-1.0 if mfe < k else None)))
                 # if never resolved (ran out of bars) and never reached k and never SL -> mark unresolved as None
@@ -197,13 +242,26 @@ def main():
     df = pd.DataFrame(allrecs)
     if len(df) == 0:
         print("no setups"); return
-    df.to_csv(os.path.expanduser("~/Desktop/trade/backtest/bt_structure_rows.csv"), index=False)
+    df.to_csv(OUT_CSV, index=False)
     print(f"\n=== {len(df)} total setups across watchlist ({ETF}) ===\n")
     print(f"{'TP rule':10s} {'n':>4s} {'WR%':>5s} {'PF':>5s} {'expR':>7s} {'netR':>7s}")
     print("-"*44)
-    for nm, _ in RULES + [("struct", 0)]:
+    for nm, _ in RULES + [("struct", 0), ("R_partbe", 0)]:
         a = agg(nm, df)
         if a: print(f"{nm:10s} {a['n']:4d} {a['wr']:5} {str(a['pf']):>5} {a['expR']:+7.3f} {a['netR']:+7.1f}")
+    # ---- partial+BE headline: report NET win-rate AND full-target hit-rate AND PF together (honest) ----
+    if PARTIAL and "R_partbe" in df and df["R_partbe"].notna().any():
+        pb = df[df["R_partbe"].notna()]
+        net_win = 100*(pb["R_partbe"] > 0).mean()
+        full_hit = 100*(pb["partstat"] == "WIN").mean()
+        partial_hit = 100*(pb["partstat"] == "PARTIAL_WIN").mean()
+        loss = 100*(pb["partstat"] == "LOSS").mean()
+        a = agg("R_partbe", df)
+        print(f"\n=== PARTIAL+BE (1/{round(1/TP1_FRAC)}@{TP1_R}R → BE → runner {RUNNER_R}R) ===")
+        print(f"  NET win-rate   : {net_win:.1f}%   (R_partbe > 0  =  full wins + givebacks banked at +{round(TP1_FRAC*TP1_R,3)}R)")
+        print(f"  full-target hit: {full_hit:.1f}%   (runner reached {RUNNER_R}R)")
+        print(f"  partial-only   : {partial_hit:.1f}%   |   clean loss: {loss:.1f}%")
+        print(f"  expR={a['expR']:+.3f}  PF={a['pf']}  netR={a['netR']:+.1f}   <- winrate is honest ONLY alongside these")
     # structure RR achieved
     sk = df["kstruct"].dropna()
     if len(sk):

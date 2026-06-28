@@ -1,3 +1,10 @@
+<?php
+require_once __DIR__ . '/auth.php';
+require_login();
+$me = current_user();
+$csrf = csrf_token();
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -26,6 +33,11 @@
         <span id="delayedTag" class="delayed-tag" hidden>~تأخیری</span>
       </div>
       <button id="refreshBtn" title="بروزرسانی">⟳</button>
+      <div class="user-chip">
+        <span class="uname"><?= h($me['u']) ?></span>
+        <?php if ($me['role'] === 'admin'): ?><a class="chip-link" href="admin.php">مدیریت</a><?php endif; ?>
+        <a class="chip-link logout" href="logout.php">خروج</a>
+      </div>
     </div>
   </header>
 
@@ -73,7 +85,11 @@
     </aside>
   </main>
 
-  <script>window.RTM_STATIC=true;</script>
+  <script>
+    window.RTM_STATIC = true;
+    window.RTM_CSRF = "<?= h($csrf) ?>";
+    window.RTM_USER = <?= json_encode(['u' => $me['u'], 'role' => $me['role']], JSON_UNESCAPED_UNICODE) ?>;
+  </script>
   <script src="/app.js"></script>
 </body>
 </html>

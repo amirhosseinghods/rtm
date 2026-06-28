@@ -238,3 +238,85 @@ main {
   #chart { height: 60vh; }
   .panel { max-height: none; }
 }
+
+/* ============================================================================
+   Auth (login) + Admin panel — reuse the dark+gold tokens, RTL, spring motion.
+   ============================================================================ */
+.auth-body { display: grid; place-items: center; min-height: 100vh; }
+.auth-wrap { width: 100%; display: grid; place-items: center; padding: 24px; }
+.auth-card {
+  position: relative; z-index: 1; width: 100%; max-width: 380px;
+  background: var(--bg-1); border: 1px solid var(--hair); border-radius: var(--r-lg);
+  box-shadow: var(--sh-3), var(--inset-hi); padding: 28px 26px;
+  animation: rise .5s var(--spring) both;
+}
+.auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.auth-label { display: block; margin: 14px 0 6px; font-size: 12.5px; color: var(--tx-2); }
+.auth-input {
+  width: 100%; padding: 11px 13px; font-family: inherit; font-size: 14px; color: var(--tx);
+  background: var(--bg-2); border: 1px solid var(--hair); border-radius: var(--r-sm);
+  transition: border-color .18s, box-shadow .18s;
+}
+.auth-input:focus-visible { outline: none; border-color: var(--gold-line); box-shadow: 0 0 0 2px var(--gold-dim); }
+.auth-submit { width: 100%; margin-top: 20px; padding: 12px; font-size: 14.5px; }
+.auth-err {
+  background: rgba(239,91,107,.10); border: 1px solid rgba(239,91,107,.35); color: #ffb4bd;
+  border-radius: var(--r-sm); padding: 9px 12px; font-size: 12.5px; margin-bottom: 6px;
+  animation: rise .3s var(--spring) both;
+}
+.auth-foot { margin-top: 14px; text-align: center; font-size: 11px; color: var(--tx-3); }
+
+/* header user chip */
+.user-chip { display: flex; align-items: center; gap: 8px; background: var(--bg-1); border: 1px solid var(--hair);
+  padding: 6px 10px 6px 12px; border-radius: 999px; }
+.user-chip .uname { font-size: 12.5px; color: var(--tx-2); font-weight: 600; }
+.chip-link { font-size: 12px; color: var(--gold-soft); text-decoration: none; padding: 3px 9px; border-radius: 999px;
+  background: var(--gold-dim); transition: background .18s, color .18s; }
+.chip-link:hover { background: rgba(212,175,55,.24); }
+.chip-link.logout { color: var(--tx-2); background: transparent; border: 1px solid var(--hair); }
+.chip-link.logout:hover { color: var(--red); border-color: rgba(239,91,107,.4); }
+
+/* admin layout */
+.admin-main { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 380px; gap: 14px;
+  padding: 16px; align-items: start; }
+.admin-col, .admin-side { display: flex; flex-direction: column; gap: 14px; animation: rise .5s var(--spring) both; }
+.admin-card { padding: 16px 18px; }
+.admin-h { margin: 0 0 14px; font-size: 14px; color: var(--gold-soft); padding-inline-start: 10px;
+  border-inline-start: 3px solid var(--gold-line); }
+.admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.admin-submit { margin-top: 14px; padding: 10px 16px; width: auto; }
+.admin-flash { grid-column: 1 / -1; background: rgba(43,185,138,.10); border: 1px solid rgba(43,185,138,.35);
+  color: #9ce6cb; border-radius: var(--r-sm); padding: 10px 14px; font-size: 13px; animation: rise .3s var(--spring) both; }
+
+/* user cards */
+.user-list { display: flex; flex-direction: column; gap: 8px; }
+.user-row { background: var(--bg-2); border: 1px solid var(--hair); border-radius: var(--r-md); padding: 11px 13px;
+  display: flex; flex-direction: column; gap: 7px; transition: border-color .18s; animation: rise .4s var(--spring) both; }
+.user-row:hover { border-color: var(--hair-2); }
+.user-main { display: flex; align-items: center; gap: 8px; }
+.u-name { font-weight: 700; font-size: 14px; }
+.user-meta { font-size: 12px; color: var(--tx-2); }
+.u-dim { color: var(--tx-3); }
+.user-acts { display: flex; gap: 6px; align-items: center; }
+.user-acts form { margin: 0; }
+.role-badge { font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+.role-badge.admin { background: var(--gold-dim); color: var(--gold-soft); box-shadow: inset 0 0 0 1px var(--gold-line); }
+.role-badge.user { background: var(--bg-3); color: var(--tx-2); }
+.pill { font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.pill.on { background: rgba(43,185,138,.14); color: var(--green); }
+.pill.off { background: rgba(239,91,107,.14); color: var(--red); }
+.mini { font-size: 11.5px; padding: 5px 11px; border-radius: 7px; text-decoration: none; color: var(--tx-2);
+  background: var(--bg-3); border: 1px solid var(--hair); cursor: pointer; transition: all .15s; }
+.mini:hover { border-color: var(--hair-2); color: var(--tx); }
+.mini.good { color: var(--green); } .mini.warn { color: var(--amber); }
+.mini.danger { color: var(--red); } .mini.danger:hover { border-color: rgba(239,91,107,.45); }
+
+/* stat tiles */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat { background: var(--bg-2); border: 1px solid var(--hair); border-radius: var(--r-md); padding: 14px;
+  text-align: center; }
+.stat-num { font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 800; color: var(--gold-soft); }
+.stat-lab { font-size: 11px; color: var(--tx-3); margin-top: 3px; }
+.stat-foot { margin-top: 12px; font-size: 11.5px; color: var(--tx-3); text-align: center; }
+
+@media (max-width: 980px) { .admin-main { grid-template-columns: 1fr; } .admin-grid { grid-template-columns: 1fr; } }

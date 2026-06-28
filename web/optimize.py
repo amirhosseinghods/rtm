@@ -86,6 +86,39 @@ def run(stamp=None):
     if les.get("by", {}).get("combo_confirmed"):
         log.append(f"- combo_confirmed: { {k: v['expR'] for k, v in les['by']['combo_confirmed'].items()} }")
 
+    # 4) LEARN FROM THE STOPS: per source, are stops sweeps (too tight) or givebacks (too loose)?
+    #    Widen/tighten stops.buf_atr accordingly; auto-disable a source that keeps stopping at a loss.
+    #    Guardrails: need >=MIN_N samples, bounded ±0.05 step + [0.15,0.8] clamp, revert by deleting key.
+    try:
+        ls = SU.lessons_stops(min_n=MIN_N)
+    except Exception as e:
+        ls = {"by_src": {}, "error": str(e)}
+    stops = tuned.get("stops") or {"buf_atr": {"default": 0.3}, "min_atr": {"default": 1.0, "XAUUSD": 2.5}, "disabled_sources": []}
+    stops.setdefault("buf_atr", {"default": 0.3}); stops.setdefault("disabled_sources", [])
+    for src, g in (ls.get("by_src") or {}).items():
+        if not g or g["n"] < MIN_N:
+            continue
+        cur = float(stops["buf_atr"].get(src, stops["buf_atr"].get("default", 0.3)))
+        new = cur
+        if g["sweep_frac"] > 0.5:                              # stops cluster at MFE<0.3R -> too tight
+            new = round(min(cur + 0.05, cur * 1.5, 0.8), 3)
+        elif g["giveback_frac"] > 0.5 and g["stop_rate"] > 55: # reached >=1R then reversed -> too loose / late
+            new = round(max(cur - 0.05, cur * 0.66, 0.15), 3)
+        if abs(new - cur) > 1e-9:
+            stops["buf_atr"][src] = new
+            changes.append(f"stops.buf_atr[{src}] {cur}->{new} (sweep{g['sweep_frac']} gb{g['giveback_frac']})")
+        # auto-mute a chronically losing source (mirror reversal auto-disable)
+        if g["stop_rate"] > 70 and (g["expR"] or 0) < 0 and src not in stops["disabled_sources"]:
+            stops["disabled_sources"].append(src)
+            changes.append(f"source {src} auto-disabled (stop {g['stop_rate']}% expR {g['expR']:+})")
+        elif g["stop_rate"] <= 60 and (g["expR"] or 0) > 0 and src in stops["disabled_sources"]:
+            stops["disabled_sources"].remove(src)                # recovered -> re-enable
+            changes.append(f"source {src} re-enabled (stop {g['stop_rate']}% expR {g['expR']:+})")
+    tuned["stops"] = stops
+    if ls.get("overall"):
+        log.append(f"- استاپ‌ها: { {k: ls['by_src'][k]['stop_rate'] for k in ls.get('by_src', {})} } "
+                   f"(sweep/giveback از روی MFE)")
+
     tuned["updated"] = stamp
     json.dump(tuned, open(TUNED_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     log.append("\n## تغییرات\n" + ("\n".join(f"- {c}" for c in changes) if changes
