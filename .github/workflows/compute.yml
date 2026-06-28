@@ -31,6 +31,7 @@ jobs:
         env:
           RTM_DATA_DIR: web/data
           RTM_TFS: "M5,M15,H1"
+          BINANCE_BASE: "https://data-api.binance.vision"   # geo-block-free mirror (runner IPs get 451 on api.binance.com)
         run: python web/build_static.py
       - name: Commit results
         run: |

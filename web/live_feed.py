@@ -26,6 +26,9 @@ REFRESH_SEC = int(os.environ.get("FEED_REFRESH_SEC", "45"))
 # TFs the engine needs for any entry TF (prep_symbol loads M15,H1,H4 + entry TF).
 ENGINE_TFS = ["M1", "M5", "M15", "H1", "H4"]
 BINANCE_INTERVAL = {"M1": "1m", "M5": "5m", "M15": "15m", "H1": "1h", "H4": "4h"}
+# Binance geo-blocks data-center IPs (HTTP 451) e.g. GitHub Actions. The public market-data
+# mirror data-api.binance.vision is NOT geo-restricted -> set BINANCE_BASE to it on the runner.
+BINANCE_BASE = os.environ.get("BINANCE_BASE", "https://api.binance.com").rstrip("/")
 # how much history to pull per TF (enough for ATR/structure + a useful chart)
 TF_LIMIT = {"M1": 1000, "M5": 1500, "M15": 1000, "H1": 1500, "H4": 1000}
 
@@ -66,7 +69,7 @@ def list_symbols():
 
 # --- Binance ---------------------------------------------------------------- #
 def _binance_klines(ticker, interval, limit):
-    url = "https://api.binance.com/api/v3/klines"
+    url = BINANCE_BASE + "/api/v3/klines"
     r = requests.get(url, params={"symbol": ticker, "interval": interval,
                                   "limit": limit}, timeout=15)
     r.raise_for_status()
@@ -100,7 +103,7 @@ def _binance_klines_deep(ticker, interval, total):
         params = {"symbol": ticker, "interval": interval, "limit": n}
         if end is not None:
             params["endTime"] = end
-        r = requests.get("https://api.binance.com/api/v3/klines", params=params, timeout=15)
+        r = requests.get(BINANCE_BASE + "/api/v3/klines", params=params, timeout=15)
         r.raise_for_status()
         rows = r.json()
         if not rows:
@@ -216,7 +219,7 @@ def last_price(sym):
     kind, ticker = SYMBOLS[sym]
     try:
         if _is_binance(kind):
-            r = requests.get("https://api.binance.com/api/v3/ticker/price",
+            r = requests.get(BINANCE_BASE + "/api/v3/ticker/price",
                              params={"symbol": ticker}, timeout=8)
             r.raise_for_status()
             return float(r.json()["price"]), False
