@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-28 21:05 UTC",
+  "updated": "2026-06-28 21:28 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -36,9 +36,9 @@
   },
   "reversal_enabled": false,
   "reversal_edge": {
-    "expR": -0.835,
-    "wr": 5.3,
-    "n": 170,
+    "expR": -0.845,
+    "wr": 5.0,
+    "n": 181,
     "rr": 3.0
   },
   "per_symbol_dir_rate": {
