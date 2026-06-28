@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-28 05:41 UTC",
+  "updated": "2026-06-28 08:36 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
