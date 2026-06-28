@@ -12,6 +12,19 @@ async function bfetch(url, ms = 8000) {
   try { return await fetch(url, { signal: ctl.signal }).then((r) => r.json()); }
   finally { clearTimeout(t); }
 }
+// Binance market data via the host-side proxy FIRST (api.binance.com is geo-blocked in
+// some regions, e.g. Iran, so a direct browser fetch returns nothing and the chart stays
+// empty). If the proxy is missing/unreachable we fall back to a direct Binance call so the
+// site still works for visitors whose network can reach Binance.
+async function binFetch(path, params, ms = 8000) {
+  const qs = new URLSearchParams(params).toString();
+  try {
+    const r = await bfetch(`proxy.php?path=${path}&${qs}`, ms);
+    if (r && !r.__error) return r;
+  } catch (e) { /* fall through to direct */ }
+  const direct = path === "ticker" ? `${BINANCE}/ticker/price?${qs}` : `${BINANCE}/klines?${qs}`;
+  return bfetch(direct, ms);
+}
 
 async function api(p) {
   if (!STATIC) return fetch(p).then((r) => r.json());
@@ -30,14 +43,14 @@ const post = (p, body) => STATIC
 
 async function staticQuote(sym) {
   const b = binSym(sym);
-  if (b) { try { const t = await bfetch(`${BINANCE}/ticker/price?symbol=${b}`); return { price: +t.price, delayed: false }; } catch (e) { return { price: null, delayed: false }; } }
+  if (b) { try { const t = await binFetch("ticker", { symbol: b }); return { price: +t.price, delayed: false }; } catch (e) { return { price: null, delayed: false }; } }
   return { price: null, delayed: true };
 }
 async function staticCandles(sym, tf, limit) {
   const b = binSym(sym);
   if (b) {
     try {
-      const rows = await bfetch(`${BINANCE}/klines?symbol=${b}&interval=${TF2IV[tf] || "5m"}&limit=${Math.min(limit || 1000, 1000)}`);
+      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[tf] || "5m", limit: Math.min(limit || 1000, 1000) });
       return rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
     } catch (e) { return []; }   // Binance slow/blocked -> render signals without candles
   }
@@ -265,7 +278,7 @@ async function tickCandle() {
   try {
     if (STATIC) {
       const b = binSym(STATE.symbol); if (!b) return;
-      const rows = await bfetch(`${BINANCE}/klines?symbol=${b}&interval=${TF2IV[STATE.tf] || "5m"}&limit=2`, 6000);
+      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: 2 }, 6000);
       rows.forEach((k) => candles.update({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
       return;
     }
