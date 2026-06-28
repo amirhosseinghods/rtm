@@ -22,6 +22,8 @@ os.makedirs(DIR, exist_ok=True)
 
 _last_rec = {}          # (symbol, tf) -> ts   (in-process throttle)
 THROTTLE_SEC = 240
+_TF_SEC = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600, "H4": 14400}   # bar length per TF
+STALE_SEC = 7 * 86400   # abandon a prediction we still can't price this long after its horizon
 
 
 def _append(path, rec):
@@ -67,13 +69,18 @@ def record(sig, ts=None, force=False):
     pts = proj.get("points") or []
     if pts and proj.get("dir_val"):
         eval_t = pts[-1]["time"]
-        _append(PRED, {
-            "ts": ts, "symbol": sig["symbol"], "tf": sig["tf"],
-            "ref_price": sig.get("price"), "dir": proj.get("dir_val"),
-            "conf": proj.get("confidence"), "eval_t": eval_t,
-            "bucket": f"{sig['symbol']}|{sig['tf']}",
-            "scored": False, "correct": None,
-        })
+        # guard: a stale/delayed feed (e.g. Yahoo gold) can build a projection whose horizon
+        # lands in the PAST (eval_t <= now). Such a prediction can never be scored honestly,
+        # so skip it instead of letting it clog the pending queue forever.
+        if eval_t > ts + _TF_SEC.get(sig["tf"], 60):
+            _append(PRED, {
+                "ts": ts, "symbol": sig["symbol"], "tf": sig["tf"],
+                "ref_price": sig.get("price"), "dir": proj.get("dir_val"),
+                "conf": proj.get("confidence"), "eval_t": eval_t,
+                "bucket": f"{sig['symbol']}|{sig['tf']}",
+                "combo": p.get("combo_score"),   # confluence count -> feeds LIVE by_combo learning
+                "scored": False, "correct": None,
+            })
     return True
 
 
@@ -85,14 +92,19 @@ def score_due(price_at, now=None):
     stored history yet, price_at returns None and the prediction stays pending."""
     now = now or int(time.time())
     preds = _read(PRED)
-    changed = False
+    out = []                                    # rebuilt store (lets us drop dead rows)
+    n_scored = n_dropped = 0
     for pr in preds:
-        if pr.get("scored"):
-            continue
-        if pr["eval_t"] > now:
-            continue
+        if pr.get("scored") or pr["eval_t"] > now:
+            out.append(pr); continue            # already done, or horizon not reached yet
         fut = price_at(pr["symbol"], pr.get("tf", "M5"), pr["eval_t"])
         if fut is None or not pr.get("ref_price"):
+            # can't price it yet. Keep waiting — UNLESS it's hopelessly stale (the data will
+            # never cover this horizon), in which case drop it so pending doesn't grow forever.
+            if now - pr["eval_t"] > STALE_SEC:
+                n_dropped += 1
+            else:
+                out.append(pr)
             continue
         move = (fut - pr["ref_price"]) / pr["ref_price"]
         thr = 0.0005
@@ -101,12 +113,13 @@ def score_due(price_at, now=None):
         else:
             correct = (move > 0) == (pr["dir"] > 0)
         pr["scored"] = True; pr["correct"] = bool(correct); pr["exit_price"] = fut
-        changed = True
-    if changed:
+        n_scored += 1; out.append(pr)
+    if n_scored or n_dropped:
         with open(PRED, "w", encoding="utf-8") as f:
-            for pr in preds:
+            for pr in out:
                 f.write(json.dumps(pr, ensure_ascii=False) + "\n")
-    return changed
+    return {"scored": n_scored, "dropped": n_dropped,
+            "pending": sum(1 for p in out if not p.get("scored"))}
 
 
 def accuracy(symbol=None, tf=None):

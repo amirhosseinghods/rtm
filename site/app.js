@@ -425,6 +425,21 @@ async function tickQuote() {
   } catch (e) {}
 }
 
+/* ---------- learning transparency (from the engine's manifest) ---------- */
+async function loadLearning() {
+  try {
+    const m = await fetch("data/manifest.json").then((r) => r.json());
+    const L = m.learning || {}, o = L.overall || {};
+    const el = $("#learnBar"); if (!el) return;
+    if (o.rate == null) { el.textContent = ""; return; }
+    const bc = L.by_combo || {};
+    const best = Object.entries(bc).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1])[0];
+    el.innerHTML = `یادگیری: دقتِ جهت <b>${Math.round(o.rate * 100)}٪</b> روی ${o.n} پیش‌بینیِ بسته‌شده`
+      + (L.pending != null ? ` · <b>${L.pending}</b> در انتظارِ نتیجه` : "")
+      + (best ? ` · بهترین همگرایی: ${best[0]} سبک (${Math.round(best[1] * 100)}٪)` : "");
+  } catch (e) { /* manifest only exists in static mode */ }
+}
+
 /* ---------- journal ---------- */
 async function loadJournal() {
   const d = await api("/api/journal");
@@ -484,6 +499,7 @@ async function reload(analyzeToo) {
   }
   if (analyzeToo) analyze();
   loadJournal();
+  loadLearning();
 }
 
 (async function init() {

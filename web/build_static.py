@@ -67,10 +67,17 @@ def main():
         try: OPT.run()
         except Exception as e: errors.append(f"optimize: {e}")
 
+    lsum = LS.summary()
     write("manifest.json", {
         "updated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
         "built": built, "tfs": TFS, "errors": errors[:20],
-        "learning": LS.summary().get("overall"),
+        "learning": {
+            "overall": lsum.get("overall"),
+            "scored": lsum.get("scored_predictions"),
+            "pending": lsum.get("pending"),
+            # learned hit-rate per confluence count (how many independent styles agreed)
+            "by_combo": {str(k): v.get("rate") for k, v in (lsum.get("by_combo") or {}).items()},
+        },
     })
     print(f"built {built} signal files, {len(errors)} errors")
     for e in errors[:20]: print("  -", e)
