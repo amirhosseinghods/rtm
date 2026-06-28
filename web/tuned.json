@@ -1,37 +1,85 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-28 16:50 UTC",
+  "updated": "2026-06-28 17:31 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
   "conf_blend": 0.5,
   "reversal_enabled": false,
   "reversal_edge": {
-    "expR": -0.768,
-    "wr": 7.4,
-    "n": 121,
+    "expR": -0.774,
+    "wr": 7.3,
+    "n": 124,
     "rr": 3.0
   },
   "per_symbol_dir_rate": {
-    "PAXGUSDT|M5": 0.453,
+    "PAXGUSDT|M5": 0.454,
     "BTCUSDT|M5": 0.569,
-    "ETHUSDT|M5": 0.484,
+    "ETHUSDT|M5": 0.485,
     "XRPUSDT|M5": 0.474,
     "SOLUSDT|M5": 0.434,
-    "BNBUSDT|M5": 0.475,
+    "BNBUSDT|M5": 0.476,
     "ADAUSDT|M5": 0.489,
-    "DOGEUSDT|M5": 0.504,
+    "DOGEUSDT|M5": 0.505,
     "AVAXUSDT|M5": 0.462,
-    "LINKUSDT|M5": 0.474,
-    "LTCUSDT|M5": 0.498,
+    "LINKUSDT|M5": 0.475,
+    "LTCUSDT|M5": 0.499,
     "DOTUSDT|M5": 0.504,
     "XAUUSD|M5": 0.465
   },
   "projection_model": {
     "_note": "idea-2 per-TF logistic (re-weighted direction + honest abstention). Fit by backtest/fit_projection_model.py, validated out-of-time by backtest/walkforward_idea2.py (overall 0.485->0.511 full-cov; gate ~0.535 @ 38% coverage). Remove this key to revert project() to the legacy hand-tuned score.",
-    "features": ["bias", "slope_sign", "rsi_pull", "rsi_z", "div", "trend_strength", "ts*slope", "rsi_z*1{H1}"],
-    "M5":  { "intercept": -0.09224, "weights": [0.12816, -0.03618, -0.21567, -0.24761, 0.22425, 0.00799, 0.03497, 0.0], "tau": 0.04 },
-    "M15": { "intercept": -0.06144, "weights": [-0.03767, -0.04887, 0.08386, -0.02866, -0.27712, 0.00923, -0.05627, 0.0], "tau": 0.02 },
-    "H1":  { "intercept": 0.11909, "weights": [0.17714, 0.02221, -0.10578, -0.07682, 0.12956, -0.08239, -0.04489, -0.07682], "tau": 0.0 }
+    "features": [
+      "bias",
+      "slope_sign",
+      "rsi_pull",
+      "rsi_z",
+      "div",
+      "trend_strength",
+      "ts*slope",
+      "rsi_z*1{H1}"
+    ],
+    "M5": {
+      "intercept": -0.09224,
+      "weights": [
+        0.12816,
+        -0.03618,
+        -0.21567,
+        -0.24761,
+        0.22425,
+        0.00799,
+        0.03497,
+        0.0
+      ],
+      "tau": 0.04
+    },
+    "M15": {
+      "intercept": -0.06144,
+      "weights": [
+        -0.03767,
+        -0.04887,
+        0.08386,
+        -0.02866,
+        -0.27712,
+        0.00923,
+        -0.05627,
+        0.0
+      ],
+      "tau": 0.02
+    },
+    "H1": {
+      "intercept": 0.11909,
+      "weights": [
+        0.17714,
+        0.02221,
+        -0.10578,
+        -0.07682,
+        0.12956,
+        -0.08239,
+        -0.04489,
+        -0.07682
+      ],
+      "tau": 0.0
+    }
   }
 }
