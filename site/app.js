@@ -234,6 +234,14 @@ function drawZoneLines(z) {
   clearLines();
   if (!z) return;
   STATE.activeZone = z;
+  // When the behavioural model CONTRADICTS the zone direction (e.g. a supply/short zone but the
+  // forecast breaks UP through it), the system does NOT recommend trading it — its verdict is
+  // WAIT. Show it muted with a clear warning instead of a full plan that looks like a signal.
+  if (z.model_against) {
+    const fa = z.action_fa || (z.dir === "LONG" ? "خرید" : "فروش");
+    pline(z.entry, "rgba(130,141,155,.85)", "dash", `${fa}ِ این ناحیه توصیه نمی‌شود — پیش‌بینی: شکستِ خلافِ جهت`);
+    return;
+  }
   pline(z.entry, C.blue, "solid", "ورود");
   pline(z.sl, C.red, "dash", "استاپ");
   const p = z.partial;
