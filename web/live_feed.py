@@ -258,6 +258,25 @@ def read_ohlcv(sym, tf, limit=500, deep=False):
     return out
 
 
+def chart_ohlcv(sym, tf, bars):
+    """Deep candles for the static chart JSON the host serves. Crypto/PAXG come from Binance
+    (paginated on the GitHub Actions runner, which is NOT geo-blocked); gold reuses the long
+    Yahoo CSV. Returned compact as [unix_sec, o, h, l, c] so the committed file stays small and
+    the browser never has to call an exchange itself."""
+    kind, ticker = SYMBOLS.get(sym, (None, None))
+    if _is_binance(kind):
+        df = _binance_klines_deep(ticker, BINANCE_INTERVAL[tf], bars)
+        df = df.dropna().drop_duplicates("Time").sort_values("Time").tail(bars)
+        t = (pd.to_datetime(df["Time"]).astype("int64") // 10**9).tolist()
+        o = df["Open"].tolist(); h = df["High"].tolist()
+        l = df["Low"].tolist();  c = df["Close"].tolist()
+        return [[int(t[i]), float(o[i]), float(h[i]), float(l[i]), float(c[i])] for i in range(len(t))]
+    # gold (Yahoo): the engine CSV already holds a long period
+    recs = read_ohlcv(sym, tf, bars)
+    return [[int(pd.to_datetime(str(x["time"])).value // 10**9),
+             float(x["open"]), float(x["high"]), float(x["low"]), float(x["close"])] for x in recs]
+
+
 # --- historical price lookup (for honest prediction scoring) ---------------- #
 _series_cache = {}   # (path, mtime) -> (np int64 times, np float closes)
 

@@ -51,17 +51,29 @@ async function staticQuote(sym) {
   return { price: null, delayed: true };
 }
 async function staticCandles(sym, tf, limit, deep) {
+  // PRIMARY: Binance candles written by GitHub Actions and served by the host — geo-block-free,
+  // and the exact bars the engine used for the signals. Compact "tohlc" = [unixSec,o,h,l,c];
+  // legacy format = [{time,open,...}].
+  try {
+    const d = await fetch(`data/ohlcv_${sym}_${tf}.json`).then((r) => r.json());
+    const raw = d.bars || [];
+    const out = (raw.length && Array.isArray(raw[0]))
+      ? raw.map((b) => ({ time: b[0], open: +b[1], high: +b[2], low: +b[3], close: +b[4] }))
+      : raw.map((x) => ({ time: Math.floor(Date.parse(x.time.replace(" ", "T") + "Z") / 1000), open: x.open, high: x.high, low: x.low, close: x.close }));
+    const clean = out.filter((x) => Number.isFinite(x.time));
+    if (clean.length) return clean;
+  } catch (e) { /* fall back to live exchange below */ }
+  // FALLBACK: a symbol whose CI export failed -> live exchange via the proxy
   const b = binSym(sym);
   if (b) {
     try {
       const params = { symbol: b, interval: TF2IV[tf] || "5m", limit: Math.min(limit || 1000, deep ? 6000 : 1000) };
-      if (deep) params.deep = 1;   // proxy paginates months of history backward
+      if (deep) params.deep = 1;
       const rows = await binFetch("klines", params, deep ? 25000 : 8000);
       return rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
-    } catch (e) { return []; }   // Binance slow/blocked -> render signals without candles
+    } catch (e) { return []; }
   }
-  const d = await fetch(`data/ohlcv_${sym}_${tf}.json`).then((r) => r.json()).catch(() => ({ bars: [] }));
-  return (d.bars || []).map((x) => ({ time: Math.floor(Date.parse(x.time.replace(" ", "T") + "Z") / 1000), open: x.open, high: x.high, low: x.low, close: x.close })).filter((x) => Number.isFinite(x.time));
+  return [];
 }
 
 let STATE = { symbol: null, tf: "M5", health: {}, lastSig: null, candleTimes: [] };
@@ -283,9 +295,15 @@ async function loadHistory() { try { await loadChart(true, true); } catch (e) {}
 async function tickCandle() {
   try {
     if (STATIC) {
+      // the chart body is committed Binance JSON (≤15 min old); top up the live right edge from
+      // the proxy, bridging the commit gap. LWC requires non-decreasing times, so only feed bars
+      // at/after the last one we have.
       const b = binSym(STATE.symbol); if (!b) return;
-      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: 2 }, 6000);
-      rows.forEach((k) => candles.update({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
+      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: 8 }, 6000);
+      let lastT = STATE.candleTimes.length ? STATE.candleTimes[STATE.candleTimes.length - 1] : 0;
+      rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }))
+        .filter((c) => c.time >= lastT)
+        .forEach((c) => { candles.update(c); if (c.time > lastT) { STATE.candleTimes.push(c.time); lastT = c.time; } });
       return;
     }
     const d = await api(`/api/ohlcv?symbol=${STATE.symbol}&tf=${STATE.tf}&limit=3`);
@@ -489,9 +507,9 @@ async function reload(analyzeToo) {
   $("#livePrice").textContent = "…";            // clear stale price immediately on switch
   if (analyzeToo) $("#assistant").textContent = "در حال تحلیل…";  // don't show prev symbol's analysis
   tickQuote();                                  // refresh the quote now (don't wait for the 5s tick)
-  await loadChart(false);                       // fast recent view first (instant, ~1000 bars)
-  loadHistory();                                // then extend months into the past in the background
-                                                // (STATIC: proxy paginates ~6000 bars; keepView leaves the view put)
+  await loadChart(false);                       // STATIC: one shot loads the full committed Binance
+                                                // history (deep already), so no separate loadHistory
+  if (!STATIC) loadHistory();                   // server mode: extend months of history in the background
   // health badge for the active TF
   const sig = await api(`/api/signal?symbol=${STATE.symbol}&tf=${STATE.tf}`);
   if (!sig.error) {

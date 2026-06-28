@@ -26,6 +26,8 @@ except Exception:
 
 OUT = os.path.abspath(os.path.join(HERE, "..", "site", "data"))
 TFS = os.environ.get("RTM_TFS", "M5,M15,H1").split(",")
+# how many Binance bars to emit per TF for the chart (deep enough to scroll back weeks/months)
+CHART_BARS = {"M1": 2000, "M5": 5000, "M15": 3000, "H1": 3000, "H4": 2000}
 os.makedirs(OUT, exist_ok=True)
 
 
@@ -51,12 +53,17 @@ def main():
                 LS.record(sig)          # journal the prediction (auto-learning)
                 SU.record(sig)          # remember the zones it placed
                 write(f"sig_{sym}_{tf}.json", {"text": text, "signal": sig})
-                # non-USDT symbols (XAUUSD) have no Binance ticker -> emit candles for the chart
-                if not sym.endswith("USDT"):
-                    write(f"ohlcv_{sym}_{tf}.json", {"bars": F.read_ohlcv(sym, tf, 600)})
                 built += 1
             except Exception as e:
                 errors.append(f"{sym}/{tf}: {str(e)[:80]}")
+            # Binance candles for EVERY symbol, written here so the browser reads them from the
+            # host (no exchange call from the visitor -> geo-block-free, and they are the exact
+            # bars the engine used). Separate try so a candle hiccup never drops the signal.
+            try:
+                write(f"ohlcv_{sym}_{tf}.json",
+                      {"bars": F.chart_ohlcv(sym, tf, CHART_BARS.get(tf, 2000)), "fmt": "tohlc"})
+            except Exception as e:
+                errors.append(f"ohlcv {sym}/{tf}: {str(e)[:60]}")
 
     # advance the learning loop each run (resolve what played out, re-tune)
     try: LS.score_due(F.price_at)
