@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-28 22:02 UTC",
+  "updated": "2026-06-28 22:23 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -27,13 +27,16 @@
     "_note": "SL geometry, learned per source/symbol by optimize.run() from MFE/MAE of resolved setups. buf_atr = breathing room beyond the zone (xATR); min_atr = floor stop distance (xATR). disabled_sources are auto-muted when their stop-rate stays high with negative expR. Delete this key to revert to hardcoded buf=0.3 / minStop.",
     "buf_atr": {
       "default": 0.3,
-      "OB-1h": 0.35
+      "OB-1h": 0.4,
+      "FL-1h": 0.35
     },
     "min_atr": {
       "default": 1.0,
       "XAUUSD": 2.5
     },
-    "disabled_sources": []
+    "disabled_sources": [
+      "FL-1h"
+    ]
   },
   "reversal_enabled": false,
   "reversal_edge": {
@@ -46,6 +49,7 @@
     "PAXGUSDT|M5": 0.452,
     "BTCUSDT|M5": 0.57,
     "ETHUSDT|M5": 0.486,
+    "XAUUSD|H1": 1.0,
     "XRPUSDT|M5": 0.475,
     "SOLUSDT|M5": 0.432,
     "BNBUSDT|M5": 0.478,
@@ -55,7 +59,7 @@
     "LINKUSDT|M5": 0.476,
     "LTCUSDT|M5": 0.501,
     "DOTUSDT|M5": 0.503,
-    "XAUUSD|M5": 0.465
+    "XAUUSD|M5": 0.466
   },
   "projection_model": {
     "_note": "idea-2 per-TF logistic (re-weighted direction + honest abstention). Fit by backtest/fit_projection_model.py, validated out-of-time by backtest/walkforward_idea2.py (overall 0.485->0.511 full-cov; gate ~0.535 @ 38% coverage). Remove this key to revert project() to the legacy hand-tuned score.",
