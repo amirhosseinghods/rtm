@@ -202,15 +202,19 @@ if ($path === 'klines') {
   $deep = !empty($_GET['deep']);
   $want = $deep ? min(6000, max($limit, 1000)) : $limit;
   foreach (order_with_cache('klines') as $name) {
-    $pageMax = ($name === 'okx') ? 300 : 1000;
-    $byTs = []; $end = 0; $guard = 0;
+    // per-page size: OKX caps at 300, KuCoin serves up to 1500 in a time window, others 1000
+    $pageMax = ($name === 'okx') ? 300 : (($name === 'kucoin') ? 1500 : 1000);
+    $byTs = []; $guard = 0; $prevOldest = null;
+    // deep: walk backward from "now"; single page: 0 = provider's latest
+    $end = $deep ? (int) (time() * 1000) : 0;
     do {
       $page = run_klines($name, $symbol, $dash, $interval, $pageMax, $end, $c, $e);
       if ($page === null || !count($page)) break;
-      foreach ($page as $row) $byTs[$row[0]] = $row;     // dedup by timestamp
-      if (count($page) < $pageMax) break;                // source has no older data
-      $end = $page[0][0] - 1;                            // page is ASC -> oldest bar is [0]
-    } while ($deep && count($byTs) < $want && ++$guard < 12);
+      foreach ($page as $row) $byTs[(int) $row[0]] = $row;   // dedup by timestamp
+      $oldest = (int) $page[0][0];                           // page is ASC -> oldest bar is [0]
+      if ($prevOldest !== null && $oldest >= $prevOldest) break;  // no older data -> stop
+      $prevOldest = $oldest; $end = $oldest - 1;
+    } while ($deep && count($byTs) < $want && ++$guard < 40);
     if ($byTs) {
       src_set('klines', $name);
       ksort($byTs);                                       // chronological
