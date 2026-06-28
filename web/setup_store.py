@@ -20,6 +20,28 @@ os.makedirs(DIR, exist_ok=True)
 SETUPS = os.path.join(DIR, "setups.jsonl")
 MAXBARS = 400          # give a setup this many bars to fill + resolve before EXPIRING it
 FEATURES = ["setup_type", "combo_confirmed", "confidence", "src", "dir", "with_trend"]
+_TUNED_PATH = os.path.join(os.path.dirname(__file__), "tuned.json")
+
+
+def _partial_cfg():
+    """The deployed partial-exit ladder, read from tuned.json (so the live learning scores
+    setups by the SAME rule the strategy trades). Defaults = the validated 0.5R/BE/2R."""
+    try:
+        p = (json.load(open(_TUNED_PATH, encoding="utf-8")) or {}).get("partial", {})
+    except Exception:
+        p = {}
+    t2 = p.get("tp2_R", 2.0)
+    return {"tp1_R": float(p.get("tp1_R", 0.5)), "tp1_frac": float(p.get("tp1_frac", 0.3333)),
+            "tp2_R": float(t2) if t2 != "struct" else 2.0, "move_be": bool(p.get("move_be", True))}
+
+
+def _actionable(z):
+    """Does this zone match what the system actually RECOMMENDS (the >=70% gate)? Only HTF
+    (OB-1h/FL-1h) with-trend zones with clear room and no behavioural-model veto. The headline
+    win-rate is measured on THESE — the trades the user is told to take, not every drawn zone."""
+    room = z.get("room_R")
+    return bool(str(z.get("src", "")).endswith("-1h") and z.get("with_trend")
+                and (room is None or room >= 2.0) and not z.get("model_against"))
 
 
 def _read():
@@ -63,7 +85,8 @@ def record(sig, now=None):
             "combo_score": z.get("combo_score"), "combo_confirmed": bool(z.get("combo_confirmed")),
             "with_trend": bool(z.get("with_trend")), "setup_type": z.get("setup_type"),
             "entry": z["entry"], "sl": z["sl"], "tp2": z["tp2"], "tp3": z.get("tp3"),
-            "risk": z.get("risk"), "status": "OPEN", "R": None, "exit_ts": None, "origin": "live",
+            "risk": z.get("risk"), "actionable": _actionable(z),
+            "status": "OPEN", "R": None, "exit_ts": None, "origin": "live",
         })
         open_keys.add(k); added += 1
     if added:
@@ -72,34 +95,44 @@ def record(sig, now=None):
 
 
 def _simulate(s, t, h, l, c):
-    """Replay forward OHLC: fill the entry (limit), then SL vs 2R-target, first touch wins.
-    Also tracks MFE/MAE (R) and bars-to-stop so we can LEARN FROM THE STOPS we hit.
-    Returns (status, R, exit_ts, mfe_R, mae_R, bars_to_stop) or None if unresolved."""
+    """Replay forward OHLC under the DEPLOYED partial+BE ladder (the rule the backtest validated
+    at ~70% net-win): fill entry → bank tp1_frac at tp1_R → move stop to break-even → runner to
+    tp2_R. Tracks MFE/MAE (R) + bars-to-stop so we LEARN FROM THE STOPS we hit.
+    Returns (status, R, exit_ts, mfe_R, mae_R, bars_to_stop); status ∈ WIN/PARTIAL_WIN/LOSS."""
     dr = 1 if s["dir"] == "LONG" else -1
-    entry, sl, tp = s["entry"], s["sl"], s["tp2"]
+    entry, sl = s["entry"], s["sl"]
     risk = s.get("risk") or abs(entry - sl) or None
-    filled = False; mfe = 0.0; mae = 0.0; fbar = 0
+    if not risk:
+        return None
+    p = _partial_cfg()
+    tp1R, frac, runR, move_be = p["tp1_R"], p["tp1_frac"], p["tp2_R"], p["move_be"]
+    filled = False; mfe = 0.0; mae = 0.0; fbar = 0; stage = 0
     for j in range(min(len(t), MAXBARS)):
         if not filled:
             hit_entry = (l[j] <= entry) if dr == 1 else (h[j] >= entry)
             if not hit_entry:
                 continue
             filled = True; fbar = j
-        if risk:
-            fav = ((h[j] - entry) / risk) if dr == 1 else ((entry - l[j]) / risk)
-            adv = ((entry - l[j]) / risk) if dr == 1 else ((h[j] - entry) / risk)
-            mfe = max(mfe, fav); mae = max(mae, adv)
-        if dr == 1:
-            hit_sl, hit_tp = (l[j] <= sl), (h[j] >= tp)
-        else:
-            hit_sl, hit_tp = (h[j] >= sl), (l[j] <= tp)
-        if hit_sl:                       # conservative: stop takes priority on a same-bar tie
-            return ("LOSS", -1.0, int(t[j]), round(mfe, 2), round(mae, 2), j - fbar)
-        if hit_tp:
-            return ("WIN", 2.0, int(t[j]), round(mfe, 2), round(mae, 2), None)
-    # ran out of bars: if it never even filled and the window is used up, expire it
+        fav = ((h[j] - entry) / risk) if dr == 1 else ((entry - l[j]) / risk)
+        adv = ((entry - l[j]) / risk) if dr == 1 else ((h[j] - entry) / risk)
+        mfe = max(mfe, fav); mae = max(mae, adv)
+        sl_hit = (l[j] <= sl) if dr == 1 else (h[j] >= sl)
+        if stage == 1:                              # runner: stop moved to break-even (entry)
+            be_hit = (l[j] <= entry) if dr == 1 else (h[j] >= entry)
+            stop_active = be_hit if move_be else sl_hit
+            if fav >= runR and not stop_active:     # runner reached target = full win
+                return ("WIN", round(frac * tp1R + (1 - frac) * runR, 3), int(t[j]), round(mfe, 2), round(mae, 2), None)
+            if stop_active:                         # banked the partial, runner stopped at BE
+                return ("PARTIAL_WIN", round(frac * tp1R, 3), int(t[j]), round(mfe, 2), round(mae, 2), None)
+        else:                                       # pre-partial: original stop active
+            if sl_hit:                              # conservative: stop wins same-bar tie
+                return ("LOSS", -1.0, int(t[j]), round(mfe, 2), round(mae, 2), j - fbar)
+            if fav >= tp1R:
+                stage = 1                           # banked tp1; BE active from next bar
     if not filled and len(t) >= MAXBARS:
         return ("EXPIRED", None, int(t[min(len(t), MAXBARS) - 1]), 0.0, 0.0, None)
+    if stage == 1:                                  # runner unresolved -> count the banked partial
+        return ("PARTIAL_WIN", round(frac * tp1R, 3), int(t[-1]), round(mfe, 2), round(mae, 2), None)
     return None
 
 
@@ -120,7 +153,7 @@ def resolve(now=None):
             continue
         s["status"], s["R"], s["exit_ts"], s["mfe_R"], s["mae_R"], s["bars_to_stop"] = out
         changed += 1
-        wins += s["status"] == "WIN"; losses += s["status"] == "LOSS"
+        wins += s["status"] in ("WIN", "PARTIAL_WIN"); losses += s["status"] == "LOSS"
     if changed:
         _write(rows)
     return {"resolved": changed, "wins": wins, "losses": losses}
@@ -150,8 +183,11 @@ def _combo_votes(D):
 
 
 def train_from_history(symbols=None, tf="M5"):
-    """Seed the store with REAL past zone outcomes (incl. stops) from the validated engine."""
-    os.environ.setdefault("FD_SRC", "1h"); os.environ.setdefault("FD_CONF", "none")
+    """Seed the store with REAL past zone outcomes (incl. stops) from the validated engine,
+    scored under the DEPLOYED strategy: HTF zones + clear-room gate + partial 0.5R→BE→2R
+    (the 10-agent operating point). These are the trades the system actually recommends."""
+    os.environ["FD_SRC"] = "1h"; os.environ["FD_CONF"] = "room"
+    os.environ["FD_PARTIAL"] = "1"; os.environ["FD_TP1"] = "0.5"; os.environ["FD_RUNNER"] = "2.0"
     import importlib, numpy as np
     import rtm_bt as B, bt_structure as BS
     importlib.reload(BS)
@@ -167,8 +203,8 @@ def train_from_history(symbols=None, tf="M5"):
         recs = BS.collect(D, sym, "london" if sym == "XAUUSD" else "ny")
         styles = _combo_votes(D)
         for r in recs:
-            R = r.get("2R")
-            if R is None:
+            Rp = r.get("R_partbe")              # realized R under the partial+BE ladder
+            if Rp is None:
                 continue
             bar, dr = r["i"], r["dir"]
             combo = int(np.sum(styles[:, bar] == dr))
@@ -180,12 +216,13 @@ def train_from_history(symbols=None, tf="M5"):
                 "with_trend": bool(r.get("withtrend")),
                 "setup_type": "trend" if r.get("withtrend") else "reversal",
                 "entry": None, "sl": None, "tp2": None, "risk": r.get("risk"),
-                "status": "WIN" if R > 0 else "LOSS", "R": float(R),
+                "actionable": True,            # room-gated HTF = a recommended setup
+                "status": r.get("partstat") or ("WIN" if Rp > 0 else "LOSS"), "R": float(Rp),
                 "mfe_R": r.get("mfe"), "mae_R": r.get("mae"), "bars_to_stop": r.get("bars_to_stop"),
                 "exit_ts": None, "origin": "train",
             })
             added += 1
-        print(f"  {sym:9} +{len([1 for r in recs if r.get('2R') is not None]):4} resolved setups")
+        print(f"  {sym:9} +{len([1 for r in recs if r.get('R_partbe') is not None]):4} resolved setups")
     _write(rows)
     return added
 
@@ -194,7 +231,7 @@ def _agg(rows):
     n = len(rows)
     if n == 0:
         return None
-    wins = sum(1 for r in rows if r["status"] == "WIN")
+    wins = sum(1 for r in rows if (r.get("R") or 0) > 0)   # net win incl. partial (R>0)
     Rs = [r["R"] for r in rows if r.get("R") is not None]
     expR = round(sum(Rs) / len(Rs), 3) if Rs else None
     return {"n": n, "stops": n - wins, "win_rate": round(100 * wins / n, 1),
@@ -202,12 +239,17 @@ def _agg(rows):
 
 
 def lessons():
-    """What the system has learned from its zones — overall + which kinds stop out most."""
-    rows = [r for r in _read() if r["status"] in ("WIN", "LOSS")]
-    out = {"overall": _agg(rows), "by": {}}
+    """What the system has learned — the HEADLINE is the strategy it actually trades: the
+    recommended (actionable) setups scored under the partial+BE rule. A separate `all` keeps
+    the raw every-zone number for transparency."""
+    rows = [r for r in _read() if r["status"] in ("WIN", "PARTIAL_WIN", "LOSS")]
+    act = [r for r in rows if r.get("actionable")]
+    base = act if len(act) >= 20 else rows        # fall back to all until enough recommended setups
+    out = {"overall": _agg(base), "all": _agg(rows),
+           "n_actionable": len(act), "is_strategy": len(act) >= 20, "by": {}}
     for f in FEATURES:
         groups = {}
-        for r in rows:
+        for r in base:
             v = r.get(f)
             if v is None:
                 continue

@@ -238,14 +238,14 @@ function drawZoneLines(z) {
   pline(z.sl, C.red, "dash", "استاپ");
   const p = z.partial;
   if (p) {
-    // validated partial-exit plan: bank 1/3 at scale_R, move stop to break-even, runner to 2R
-    pline(p.scale_price, C.gold, "dash", `خروجِ ۱/۳ (${p.scale_R}R)`);
-    if (p.move_be) pline(p.be_price, C.gold, "dash", "سربه‌سر پس از پله");
-    pline(p.runner_tp, C.green, "solid", `هدفِ رانر (${p.runner_R}R)`);
+    // validated partial-exit plan: bank 1/3 at scale_R, stop→break-even (=entry, shown as «ورود»),
+    // runner to 2R. (No separate BE line — it sits on the entry line and just overlaps it.)
+    pline(p.scale_price, C.gold, "dash", `پله ۱/۳ · ${p.scale_R}R`);
+    pline(p.runner_tp, C.green, "solid", `رانر · ${p.runner_R}R`);
   } else {
-    pline(z.tp2, C.green, "solid", "TP2 (2R)");
+    pline(z.tp2, C.green, "solid", "TP2 · 2R");
   }
-  if (z.tp3 != null) pline(z.tp3, C.green, "dash", "TP3 (3R)");
+  if (z.tp3 != null) pline(z.tp3, C.green, "dash", "TP3 · 3R");
 }
 
 /* ---------- data loading ---------- */

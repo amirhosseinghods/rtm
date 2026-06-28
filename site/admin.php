@@ -204,12 +204,12 @@ $csrf = csrf_token();
       <div class="panel admin-card">
         <h3 class="admin-h">آمارِ سیستم (موتورِ یادگیری)</h3>
         <div class="stat-grid">
-          <div class="stat"><div class="stat-num num"><?= $sysSetupWR!==null?$sysSetupWR.'٪':'—' ?></div><div class="stat-lab">نرخ بردِ ستاپ‌ها</div></div>
+          <div class="stat"><div class="stat-num num"><?= $sysSetupWR!==null?$sysSetupWR.'٪':'—' ?></div><div class="stat-lab">نرخ بردِ ستاپ‌های پیشنهادی</div></div>
           <div class="stat"><div class="stat-num num"><?= $sysStop!==null?$sysStop.'٪':'—' ?></div><div class="stat-lab">نرخ استاپ</div></div>
-          <div class="stat"><div class="stat-num num"><?= $sysExp!==null?($sysExp>=0?'+':'').$sysExp:'—' ?></div><div class="stat-lab">انتظارِ R</div></div>
-          <div class="stat"><div class="stat-num num"><?= $eng['dir_rate']!==null?$eng['dir_rate'].'٪':'—' ?></div><div class="stat-lab">دقتِ جهت</div></div>
+          <div class="stat"><div class="stat-num num"><?= $sysExp!==null?($sysExp>=0?'+':'').$sysExp:'—' ?></div><div class="stat-lab">انتظارِ R (خروجِ پله‌ای)</div></div>
+          <div class="stat"><div class="stat-num num"><?= $eng['dir_rate']!==null?$eng['dir_rate'].'٪':'—' ?></div><div class="stat-lab">دقتِ جهتِ خام</div></div>
         </div>
-        <div class="stat-foot num">نمونه: <?= $les['n'] ?: 0 ?> ستاپ از <?= $les['k'] ?> فایلِ سیگنال · پیش‌بینی‌ها: <?= $eng['n'] ?? 0 ?></div>
+        <div class="stat-foot num">فقط ستاپ‌هایی که سیستم پیشنهاد می‌دهد (HTF + فضای کافی + خروجِ پله‌ای) · نمونه: <?= $les['n'] ?: 0 ?> از <?= $les['k'] ?> فایلِ سیگنال</div>
       </div>
 
       <div class="panel admin-card">

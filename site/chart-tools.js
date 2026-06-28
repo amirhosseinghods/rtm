@@ -178,12 +178,8 @@
 
     /* ---------------- toolbars UI ---------------- */
     function buildUI() {
-      var tools = [["trend", "خط روند", "M3 17 9 11l4 3 8-8"], ["ray", "ری", "M4 12h14M14 8l5 4-5 4"], ["hline", "خط افقی", "M3 12h18"], ["vline", "خط عمودی", "M12 3v18"], ["rect", "مستطیل/ناحیه", "M4 6h16v12H4z"], ["fib", "فیبوناچی", "M3 6h18M3 10h18M3 14h18M3 18h18"], ["text", "متن", "M5 5h14M12 5v14"]];
-      var bar = document.createElement("div"); bar.className = "draw-toolbar";
-      tools.forEach(function (t) { var b = document.createElement("button"); b.className = "tool-btn"; b.dataset.tool = t[0]; b.title = t[1]; b.innerHTML = "<svg width=16 height=16 viewBox='0 0 24 24' fill=none stroke=currentColor stroke-width=2><path d='" + t[2] + "'/></svg>"; b.onclick = function () { setTool(state.tool === t[0] ? null : t[0]); }; bar.appendChild(b); });
-      var del = document.createElement("button"); del.className = "tool-btn danger"; del.title = "حذفِ انتخاب‌شده"; del.innerHTML = "🗑"; del.onclick = delSel; bar.appendChild(del);
-      var clr = document.createElement("button"); clr.className = "tool-btn"; clr.title = "پاک‌کردنِ همه"; clr.textContent = "⌫"; clr.onclick = clearAll; bar.appendChild(clr);
-      chartEl.appendChild(bar);
+      // (drawing toolbar removed per user request — drawing engine stays dormant but the
+      //  intrusive right-side panel is gone. Saved drawings still render if any exist.)
 
       // indicators menu button lives in the header controls
       var btn = document.createElement("button"); btn.id = "indBtn"; btn.textContent = "ƒ اندیکاتورها";
