@@ -40,4 +40,12 @@ function rtm_migrate(mysqli $m) {
     ip VARCHAR(45) NOT NULL, username VARCHAR(64) NOT NULL, ts DATETIME DEFAULT CURRENT_TIMESTAMP,
     ok TINYINT(1) DEFAULT 0, INDEX idx_ip_ts (ip, ts), INDEX idx_user_ts (username, ts)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+  // per-user chart drawings (trendlines, rectangles, fib, etc.) — scoped by user+symbol+tf
+  $m->query("CREATE TABLE IF NOT EXISTS rtm_drawings (
+    id INT AUTO_INCREMENT PRIMARY KEY, user_id VARCHAR(64) NOT NULL,
+    symbol VARCHAR(24) NOT NULL, tf VARCHAR(8) NOT NULL,
+    type VARCHAR(16) NOT NULL, data TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_draw (user_id, symbol, tf)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }

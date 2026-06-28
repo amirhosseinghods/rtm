@@ -91,5 +91,6 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     window.RTM_USER = <?= json_encode(['u' => $me['u'], 'role' => $me['role']], JSON_UNESCAPED_UNICODE) ?>;
   </script>
   <script src="/app.js"></script>
+  <script src="/chart-tools.js"></script>
 </body>
 </html>

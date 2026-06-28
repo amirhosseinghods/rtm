@@ -60,8 +60,8 @@ async function staticCandles(sym, tf, limit, deep) {
     const d = await fetch(`data/ohlcv_${sym}_${tf}.json`).then((r) => r.json());
     const raw = d.bars || [];
     const out = (raw.length && Array.isArray(raw[0]))
-      ? raw.map((b) => ({ time: b[0], open: +b[1], high: +b[2], low: +b[3], close: +b[4] }))
-      : raw.map((x) => ({ time: Math.floor(Date.parse(x.time.replace(" ", "T") + "Z") / 1000), open: x.open, high: x.high, low: x.low, close: x.close }));
+      ? raw.map((b) => ({ time: b[0], open: +b[1], high: +b[2], low: +b[3], close: +b[4], volume: b.length > 5 ? +b[5] : 0 }))
+      : raw.map((x) => ({ time: Math.floor(Date.parse(x.time.replace(" ", "T") + "Z") / 1000), open: x.open, high: x.high, low: x.low, close: x.close, volume: x.volume || 0 }));
     const clean = out.filter((x) => Number.isFinite(x.time));
     if (clean.length) return clean;
   } catch (e) { /* fall back to live exchange below */ }
@@ -97,6 +97,8 @@ const candles = chart.addCandlestickSeries({
   upColor: C.green, downColor: C.red, borderUpColor: C.green,
   borderDownColor: C.red, wickUpColor: C.green, wickDownColor: C.red,
 });
+// expose chart handles for chart-tools.js (drawing tools + indicators)
+window.RTM = { chart: chart, candles: candles, chartEl: chartEl, C: C, LWC: LightweightCharts };
 // leave room at the bottom for the RSI sub-pane
 chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.06, bottom: 0.27 } });
 // RSI(14) on its own bottom-pinned scale, with 70/30 guide lines + in-pane text labels
@@ -291,7 +293,10 @@ async function loadChart(keepView, deep) {
       .filter((b) => Number.isFinite(b.time));
   }
   STATE.candleTimes = bars.map((b) => b.time);
+  STATE.bars = bars;
   candles.setData(bars);
+  // feed candles to the drawing/indicator layer (recomputes indicators, reloads saved drawings)
+  try { window.ChartTools && window.ChartTools.onCandles(bars, STATE.symbol, STATE.tf); } catch (e) {}
   // On first load / symbol switch, snap to the latest bars at the fixed readable barSpacing
   // (NOT fitContent — that crams everything into one screen, making candles invisible).
   // On the 60s auto-refresh / background deep-load (keepView) we leave the view untouched.

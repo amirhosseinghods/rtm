@@ -272,11 +272,14 @@ def chart_ohlcv(sym, tf, bars):
         t = df["Time"].values.astype("datetime64[s]").astype("int64")
         o = df["Open"].tolist(); h = df["High"].tolist()
         l = df["Low"].tolist();  c = df["Close"].tolist()
-        return [[int(t[i]), float(o[i]), float(h[i]), float(l[i]), float(c[i])] for i in range(len(t))]
+        v = df["Vol"].tolist() if "Vol" in df.columns else [0.0] * len(t)
+        # compact [unix_sec, o, h, l, c, vol] — engine reads only 0..4; vol drives chart VWAP/volume
+        return [[int(t[i]), float(o[i]), float(h[i]), float(l[i]), float(c[i]), float(v[i])] for i in range(len(t))]
     # gold (Yahoo): the engine CSV already holds a long period
     recs = read_ohlcv(sym, tf, bars)
     return [[int(pd.to_datetime(str(x["time"])).value // 10**9),
-             float(x["open"]), float(x["high"]), float(x["low"]), float(x["close"])] for x in recs]
+             float(x["open"]), float(x["high"]), float(x["low"]), float(x["close"]),
+             float(x.get("volume", 0) or 0)] for x in recs]
 
 
 # --- historical price lookup (for honest prediction scoring) ---------------- #
