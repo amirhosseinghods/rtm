@@ -295,6 +295,13 @@ async function loadChart(keepView, deep) {
   STATE.candleTimes = bars.map((b) => b.time);
   STATE.bars = bars;
   candles.setData(bars);
+  // right-axis precision by price magnitude: small coins (XRP ~2.5, DOT ~6) need 4 decimals,
+  // tiny ones (DOGE…) 6; big coins (BTC/ETH) stay at 2. Mirrors the panel's fmt().
+  if (bars.length) {
+    const a = Math.abs(bars[bars.length - 1].close);
+    const prec = a >= 100 ? 2 : a >= 1 ? 4 : 6;
+    candles.applyOptions({ priceFormat: { type: "price", precision: prec, minMove: Math.pow(10, -prec) } });
+  }
   // feed candles to the drawing/indicator layer (recomputes indicators, reloads saved drawings)
   try { window.ChartTools && window.ChartTools.onCandles(bars, STATE.symbol, STATE.tf); } catch (e) {}
   // On first load / symbol switch, snap to the latest bars at the fixed readable barSpacing
