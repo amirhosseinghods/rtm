@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-29 02:07 UTC",
+  "updated": "2026-06-29 07:06 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -29,8 +29,8 @@
     "_note": "SL geometry, learned per source/symbol by optimize.run() from MFE/MAE of resolved setups. buf_atr = breathing room beyond the zone (xATR); min_atr = floor stop distance (xATR). disabled_sources are auto-muted when their stop-rate stays high with negative expR. Delete this key to revert to hardcoded buf=0.3 / minStop.",
     "buf_atr": {
       "default": 0.3,
-      "OB-1h": 0.5,
-      "FL-1h": 0.6
+      "OB-1h": 0.55,
+      "FL-1h": 0.65
     },
     "min_atr": {
       "default": 1.0,
@@ -49,18 +49,18 @@
   },
   "per_symbol_dir_rate": {
     "PAXGUSDT|M5": 0.454,
-    "BTCUSDT|M5": 0.57,
-    "ETHUSDT|M5": 0.487,
+    "BTCUSDT|M5": 0.569,
+    "ETHUSDT|M5": 0.486,
     "XAUUSD|H1": 1.0,
     "XRPUSDT|M5": 0.476,
     "SOLUSDT|M5": 0.432,
-    "BNBUSDT|M5": 0.478,
-    "ADAUSDT|M5": 0.49,
-    "DOGEUSDT|M5": 0.507,
+    "BNBUSDT|M5": 0.477,
+    "ADAUSDT|M5": 0.489,
+    "DOGEUSDT|M5": 0.506,
     "AVAXUSDT|M5": 0.464,
-    "LINKUSDT|M5": 0.476,
-    "LTCUSDT|M5": 0.502,
-    "DOTUSDT|M5": 0.503,
+    "LINKUSDT|M5": 0.474,
+    "LTCUSDT|M5": 0.5,
+    "DOTUSDT|M5": 0.502,
     "XAUUSD|M5": 0.466
   },
   "projection_model": {
