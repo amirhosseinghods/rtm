@@ -350,7 +350,25 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
         ti = min(len(pts) - 1, max(0, int(round(turn_k)) - 1)) if pts else -1
         turn_pt = pts[ti] if (pts and ti >= 0) else None
         wt = bool(tm.get("with_trend")) if tm else False
-        regime_ok = (not wt) or (bias_val != 0 and int(np.sign(bias_val)) == dirn)
+        # regime_ok = does THIS bar match the gates the win-rate was measured on? Mirrors the
+        # backtest harness (swing_trade_eval.eval_rule): conviction tau, with-trend, RSI extreme,
+        # trend-strength floor. The badge is shown only when all the config's gates pass — so a
+        # 0.78 win-rate is never claimed on a bar that wouldn't have been a trade.
+        regime_ok = True
+        if tm:
+            if p_up is not None and abs(p_up - 0.5) < float(tm.get("tau", 0.0)):
+                regime_ok = False
+            if wt and not (bias_val != 0 and int(np.sign(bias_val)) == dirn):
+                regime_ok = False
+            if tm.get("rsi_gate") and rsi_last is not None:
+                rz = (float(rsi_last) - 50.0) / 15.0
+                if (dirn > 0 and rz > -0.6) or (dirn < 0 and rz < 0.6):
+                    regime_ok = False
+            mts = float(tm.get("min_ts", 0.0))
+            if mts > 0:
+                ts_now = (min(5.0, abs(c[-1] - c[-1 - 20]) / a) if (a > 0 and n > 20) else 0.0)
+                if ts_now < mts:
+                    regime_ok = False
         reach = {"target": round(float(target), 6), "stop": round(float(stop), 6),
                  "fav_atr": round(float(fav), 2), "adv_atr": round(float(adv), 2),
                  "turn_time": (turn_pt["time"] if turn_pt else None),

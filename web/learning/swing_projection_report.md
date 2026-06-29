@@ -9,7 +9,11 @@ Date: 2026-06-29 · Scope: projection arc amplitude (`rsi_tools.project`), the r
 
 1. **The arc was drawn ~7–13× too small.** Measured over **13 symbols × 3 TFs (~140k bars)**, the real median forward reach is **~2.6–3.7 ATR** (mean ~3.5–4.6), but the projection drew a fixed **0.42 ATR** wave. Price typically turns around the **mid-point** of the horizon. → The projection now sizes the counter-swing to the median adverse reach and runs the net trend to the median favourable reach, peaking at the empirical turn-bar. Live path range went from ~2 ATR to **~3.3–3.8 ATR**.
 2. **Honest reach model.** Conditioning the reach on the 8 causal features did **not** beat the constant median (leave-symbols-out MAE improved only ~0.00–0.01 ATR — noise), so the **per-TF constant median** ships (`tuned.json::swing_model`), no false precision.
-3. **Win-rate search (47 agents, out-of-time + leave-symbols-out).** Only **M5** earned a robust upgrade: with-trend, high-conviction, TP=0.5·favReach / SL=1.5·advReach, τ=0.06 → test win-rate **0.497 → 0.717** (LOSO 0.717, expR +0.028, coverage 0.177 ≈ half baseline). **M15 & H1 honestly stay at baseline** (every high-win-rate alt collapsed coverage below half). The verifiers correctly **rejected the traps** — e.g. TP 0.4 / SL 2 hit 0.76 win-rate but **negative** expR ("win often, lose big").
+3. **Win-rate search (47 agents, out-of-time + leave-symbols-out).** **All three TFs now carry a robust 70%+ config** (the initial synthesis shelved M15/H1 only because of a coverage gate; the user prioritises win-rate, so the validated high-win-rate configs ship — they all have **positive** out-of-time AND leave-symbols-out expR, so they are not the "win often, lose big" traps the verifiers rejected on M5):
+   - **M5:** with-trend, τ 0.06, TP 0.5 / SL 1.5 → **0.497 → 0.730** (LOSO 0.721, expR +0.041).
+   - **M15:** with-trend, τ 0.06, TP 0.4 / SL 2 → **0.509 → 0.783** (LOSO **0.824**, expR +0.064 — a clean win, expR ≥ baseline).
+   - **H1:** RSI-extreme, τ 0.06, TP 0.4 / SL 2 → **0.523 → 0.781** (LOSO 0.810, expR +0.009 — high win-rate but thin per-trade edge; baseline expR was +0.086).
+   - **All-TF out-of-time: 75.6%** on 6930 trades. The projection direction still draws on every bar; the high win-rate **badge** appears only on bars matching the gates the rate was measured on (`reach.regime_ok`).
 
 ---
 
