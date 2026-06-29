@@ -1,6 +1,6 @@
-# گزارشِ بهینه‌سازی — 2026-06-29 16:25 UTC
+# گزارشِ بهینه‌سازی — 2026-06-29 16:42 UTC
 
-- پیش‌بینی‌های امتیازخورده‌شده: {'scored': 0, 'dropped': 0, 'pending': 1118}
+- پیش‌بینی‌های امتیازخورده‌شده: {'scored': 0, 'dropped': 0, 'pending': 1149}
 - ناحیه‌های resolve‌شده: {'resolved': 0, 'wins': 0, 'losses': 0}
 
 - جهتِ کلی: rate=0.494 روی 17586 | by_combo={0: 0.45, 1: 0.495, 2: 0.516, 3: 0.471}
@@ -8,9 +8,9 @@
 - کلِ ناحیه‌ها: stop_rate 25.0% expR 0.542 روی 36
 
 - combo_confirmed: {'False': 0.365}
-- استاپ‌ها: {'FL-1h': 92.2, 'OB-15m': 65.9, 'OB-1h': 61.7} (sweep/giveback از روی MFE)
+- استاپ‌ها: {'FL-1h': 92.2, 'OB-15m': 68.8, 'OB-1h': 62.9} (sweep/giveback از روی MFE)
 
 ## تغییرات
 - نرخِ جهتیِ 15 نماد به‌روز شد
-- stops.buf_atr[OB-15m] 0.4->0.45 (sweep0.552 gb0.241)
-- stops.buf_atr[OB-1h] 0.7->0.75 (sweep0.649 gb0.054)
+- stops.buf_atr[OB-15m] 0.45->0.5 (sweep0.606 gb0.212)
+- stops.buf_atr[OB-1h] 0.75->0.8 (sweep0.667 gb0.051)
