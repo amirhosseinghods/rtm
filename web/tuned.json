@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-29 20:22 UTC",
+  "updated": "2026-06-29 21:51 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -31,7 +31,7 @@
       "default": 0.3,
       "OB-1h": 0.8,
       "FL-1h": 0.8,
-      "OB-15m": 0.6
+      "OB-15m": 0.65
     },
     "min_atr": {
       "default": 1.0,
@@ -50,20 +50,32 @@
   },
   "per_symbol_dir_rate": {
     "PAXGUSDT|M5": 0.456,
-    "BTCUSDT|M5": 0.569,
+    "PAXGUSDT|H1": 1.0,
+    "BTCUSDT|M5": 0.568,
+    "BTCUSDT|H1": 0.375,
     "ETHUSDT|M5": 0.485,
+    "ETHUSDT|H1": 0.15,
     "XAUUSD|H1": 1.0,
-    "XRPUSDT|M5": 0.476,
+    "XRPUSDT|M5": 0.475,
+    "XRPUSDT|H1": 0.15,
     "SOLUSDT|M5": 0.432,
-    "BNBUSDT|M5": 0.477,
+    "SOLUSDT|H1": 1.0,
+    "BNBUSDT|M5": 0.476,
+    "BNBUSDT|H1": 0.475,
     "ADAUSDT|M5": 0.488,
+    "ADAUSDT|H1": 0.15,
     "DOGEUSDT|M5": 0.507,
+    "DOGEUSDT|H1": 1.0,
     "AVAXUSDT|M5": 0.464,
-    "LINKUSDT|M5": 0.474,
-    "LTCUSDT|M5": 0.5,
+    "AVAXUSDT|H1": 0.925,
+    "LINKUSDT|M5": 0.473,
+    "LINKUSDT|H1": 0.15,
+    "LTCUSDT|M5": 0.499,
+    "LTCUSDT|H1": 0.15,
     "DOTUSDT|M5": 0.501,
+    "DOTUSDT|H1": 0.525,
     "ETHUSDT|M15": 0.833,
-    "XAUUSD|M5": 0.467
+    "XAUUSD|M5": 0.468
   },
   "projection_model": {
     "_note": "idea-2 per-TF logistic (re-weighted direction + honest abstention). Fit by backtest/fit_projection_model.py, validated out-of-time by backtest/walkforward_idea2.py (overall 0.485->0.511 full-cov; gate ~0.535 @ 38% coverage). Remove this key to revert project() to the legacy hand-tuned score.",
