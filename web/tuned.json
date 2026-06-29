@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-29 18:23 UTC",
+  "updated": "2026-06-29 20:22 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -31,7 +31,7 @@
       "default": 0.3,
       "OB-1h": 0.8,
       "FL-1h": 0.8,
-      "OB-15m": 0.55
+      "OB-15m": 0.6
     },
     "min_atr": {
       "default": 1.0,
@@ -49,20 +49,20 @@
     "rr": 3.0
   },
   "per_symbol_dir_rate": {
-    "PAXGUSDT|M5": 0.455,
-    "BTCUSDT|M5": 0.57,
-    "ETHUSDT|M5": 0.486,
+    "PAXGUSDT|M5": 0.456,
+    "BTCUSDT|M5": 0.569,
+    "ETHUSDT|M5": 0.485,
     "XAUUSD|H1": 1.0,
-    "XRPUSDT|M5": 0.477,
+    "XRPUSDT|M5": 0.476,
     "SOLUSDT|M5": 0.432,
-    "BNBUSDT|M5": 0.478,
-    "ADAUSDT|M5": 0.49,
+    "BNBUSDT|M5": 0.477,
+    "ADAUSDT|M5": 0.488,
     "DOGEUSDT|M5": 0.507,
     "AVAXUSDT|M5": 0.464,
-    "LINKUSDT|M5": 0.475,
+    "LINKUSDT|M5": 0.474,
     "LTCUSDT|M5": 0.5,
-    "DOTUSDT|M5": 0.502,
-    "ETHUSDT|M15": 0.851,
+    "DOTUSDT|M5": 0.501,
+    "ETHUSDT|M15": 0.833,
     "XAUUSD|M5": 0.467
   },
   "projection_model": {
