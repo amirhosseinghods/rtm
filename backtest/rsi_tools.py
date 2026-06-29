@@ -187,7 +187,8 @@ def proj_reach(swing, tf_minutes):
 
 
 def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
-            tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48, model=None, swing=None):
+            tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48, model=None,
+            swing=None, trade=None):
     """Honest, ZONE-AWARE directional projection (a hypothesis, not a promise), drawn as an
     ORGANIC wavy path. The path runs toward the nearest opposing zone; on contact it either
     REACTS (bounces/returns) or BREAKS through and continues — decided by zone strength
@@ -334,6 +335,30 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
                 target = next_zone(base_leg, cur_dir)
         pts.append({"time": tsec, "value": round(float(px), 6)})
 
+    # ---- reach estimate: "how far does it likely run, then turn back?" -------------------------
+    # From the swing reach (median favourable/adverse ATR) + the VALIDATED per-TF trade geometry
+    # (web/tuned.json swing_trade, out-of-time + leave-symbols-out tested). Gives an honest TARGET
+    # the trend is expected to reach, the likely REVERSAL point, and a win-rate badge shown only
+    # when the setup matches the regime the win-rate was measured on (e.g. with-trend on M5).
+    reach = None
+    if R is not None and dirn != 0:
+        tm = (trade or {}).get(_proj_tf_key(tf_minutes)) if trade else None
+        tp_mult = float(tm.get("tp_mult", 1.0)) if tm else 1.0
+        sl_mult = float(tm.get("sl_mult", 1.0)) if tm else 1.0
+        target = base + dirn * tp_mult * fav * a
+        stop = base - dirn * sl_mult * adv * a
+        ti = min(len(pts) - 1, max(0, int(round(turn_k)) - 1)) if pts else -1
+        turn_pt = pts[ti] if (pts and ti >= 0) else None
+        wt = bool(tm.get("with_trend")) if tm else False
+        regime_ok = (not wt) or (bias_val != 0 and int(np.sign(bias_val)) == dirn)
+        reach = {"target": round(float(target), 6), "stop": round(float(stop), 6),
+                 "fav_atr": round(float(fav), 2), "adv_atr": round(float(adv), 2),
+                 "turn_time": (turn_pt["time"] if turn_pt else None),
+                 "turn_price": (turn_pt["value"] if turn_pt else None),
+                 "tp_mult": tp_mult, "sl_mult": sl_mult,
+                 "winrate": (tm.get("winrate") if (tm and regime_ok) else None),
+                 "regime_ok": bool(regime_ok), "with_trend_only": wt}
+
     # ---- Persian scenario narrative ----
     scenario = f"سناریو: مسیرِ کلی {label}."
     if events:
@@ -346,7 +371,12 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
         scenario = "سناریو: " + " سپس ".join(bits) + "."
     else:
         scenario += " در این بازه به ناحیهٔ مخالفِ مشخصی نمی‌رسد."
+    if reach is not None:
+        scenario += (f" برآوردِ کشِش: احتمالاً تا حدودِ {reach['target']} پیش می‌رود "
+                     f"(~{reach['fav_atr']} برابرِ ATR) و نزدیکِ آنجا می‌چرخد.")
+        if reach.get("winrate"):
+            scenario += f" نرخِ بردِ این نوع پیش‌بینی روی {_proj_tf_key(tf_minutes)} ≈ {round(reach['winrate']*100)}٪ (بک‌تستِ خارج‌اززمان)."
 
     return {"dir": label, "dir_val": int(dirn), "confidence": round(conf, 2),
             "notes": note, "rsi_state": rs["zone"], "points": pts,
-            "events": events, "scenario": scenario}
+            "events": events, "scenario": scenario, "reach": reach}

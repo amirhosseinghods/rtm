@@ -452,7 +452,15 @@ def compute(sym, tf="M5"):
     tfw = TF_WEIGHT.get(tf, 0.6)
     proj = RT.project(D["time"], c, atr, biasv, rsi_last, divs, primary, tfmin,
                       tf_weight=tfw, dom_bias=dom_bias, zones=zones, price=price,
-                      model=TUNED().get("projection_model"), swing=TUNED().get("swing_model"))
+                      model=TUNED().get("projection_model"), swing=TUNED().get("swing_model"),
+                      trade=TUNED().get("swing_trade"))
+
+    # ---- zones consistent with the projection: tag each zone hم‌جهت / خلافِ پیش‌بینی ----
+    pdir = proj.get("dir_val", 0)
+    for z in zones:
+        zd = 1 if z["dir"] == "LONG" else -1
+        z["proj_aligned"] = (pdir != 0 and zd == pdir)
+        z["proj_against"] = (pdir != 0 and zd == -pdir)
 
     # ---- clear ACTION VERDICT: buy now / sell now / wait ----
     verdict = _verdict(zones, primary, price, a, rstate, tf)

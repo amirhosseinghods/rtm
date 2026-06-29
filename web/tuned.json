@@ -146,5 +146,11 @@
       "floor": 0.6,
       "cap": 9.0
     }
+  },
+  "swing_trade": {
+    "_note": "VALIDATED projection-trade geometry per TF — out-of-time (70/30 time-split) test + leave-symbols-out, from the swing-winrate-search workflow (47 agents, 2026-06-29). TP=tp_mult*favourable-reach ATR, SL=sl_mult*adverse-reach ATR; with_trend gates the win-rate badge to HTF-aligned setups. Drives the projection's reach TARGET + likely-reversal display and the honest win-rate badge. M5 lifts win-rate 0.497->0.717 (with-trend, high-conviction, ~half the call frequency). M15/H1 KEEP baseline: no robust config raised win-rate without gutting coverage. Harness: backtest/swing_trade_eval.py. Remove a TF block to hide its target/badge.",
+    "M5":  { "tp_mult": 0.5, "sl_mult": 1.5, "tau": 0.06, "with_trend": true,  "winrate": 0.717, "expR": 0.028, "coverage": 0.177, "baseline_wr": 0.497, "loso_wr": 0.717 },
+    "M15": { "tp_mult": 1.0, "sl_mult": 1.0, "tau": 0.02, "with_trend": false, "winrate": 0.509, "expR": 0.057, "coverage": 0.815, "baseline_wr": 0.509, "loso_wr": 0.509 },
+    "H1":  { "tp_mult": 1.0, "sl_mult": 1.0, "tau": 0.0,  "with_trend": false, "winrate": 0.523, "expR": 0.086, "coverage": 1.0,   "baseline_wr": 0.523, "loso_wr": 0.523 }
   }
 }

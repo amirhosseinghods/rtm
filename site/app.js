@@ -257,7 +257,7 @@ class ZoneBand {
   updateAllViews() {}
   paneViews() { return [this._pv]; }
 }
-let bands = [], priceLines = [];
+let bands = [], priceLines = [], projLines = [];
 function clearLines() {                                  // entry/SL/TP lines only (not the zone bands)
   priceLines.forEach((l) => { try { candles.removePriceLine(l); } catch (e) {} });
   priceLines = [];
@@ -408,7 +408,8 @@ function drawSignalOverlays(sig) {
     const fill = z.src.startsWith("FL") ? colFL : (z.dir === "LONG" ? colDem : colSup);
     const lc = z.dir === "LONG" ? "rgba(43,185,138,.8)" : "rgba(239,91,107,.8)";
     const rk = (z.risk && z.risk.level) || (z.risk_rating && z.risk_rating.level) || "";
-    const label = `${z.action_fa || (z.dir === "LONG" ? "خرید" : "فروش")} · ${z.src}` + (rk ? ` · ریسک ${rk}` : "");
+    const align = z.proj_aligned ? " · ✓ هم‌جهت با پیش‌بینی" : (z.proj_against ? " · ⚠ خلافِ پیش‌بینی" : "");
+    const label = `${z.action_fa || (z.dir === "LONG" ? "خرید" : "فروش")} · ${z.src}` + (rk ? ` · ریسک ${rk}` : "") + align;
     band(z.top, z.bot, fill, label, lc);
   });
   drawZoneLines(sig.primary);   // primary by default; clicking another zone re-draws its levels
@@ -428,6 +429,8 @@ function drawSignalOverlays(sig) {
     color: d.type === "bull" ? C.green : C.red,
     shape: d.type === "bull" ? "arrowUp" : "arrowDown", text: "RSI" }));
   candles.setMarkers(marks);
+  // clear previous projection price-lines (reach target)
+  projLines.forEach((l) => { try { projSeries.removePriceLine(l); } catch (e) {} }); projLines = [];
   // trend projection (start at the last candle so it connects to price)
   if (sig.projection && sig.projection.points && sig.projection.points.length) {
     const lt = STATE.candleTimes[STATE.candleTimes.length - 1];
@@ -441,6 +444,21 @@ function drawSignalOverlays(sig) {
       shape: e.type === "bounce" ? "circle" : "arrowDown",
       text: e.type === "bounce" ? "واکنش" : "شکست",
     }));
+    // reach estimate — "how far it likely runs, then turns back": a target line + a turn marker,
+    // plus the honest out-of-time win-rate when the setup matches the tested regime.
+    const reach = sig.projection.reach;
+    const up = (sig.projection.dir_val || 0) >= 0;
+    if (reach && reach.target != null) {
+      const wr = reach.winrate ? ` · برد ~${Math.round(reach.winrate * 100)}٪` : "";
+      projLines.push(projSeries.createPriceLine({ price: reach.target,
+        color: up ? "rgba(43,185,138,.8)" : "rgba(239,91,107,.8)", lineWidth: 1, lineStyle: 2,
+        axisLabelVisible: true, title: "هدفِ احتمالی" + wr }));
+      if (reach.turn_time != null && reach.turn_price != null) {
+        evMarks.push({ time: reach.turn_time, position: up ? "aboveBar" : "belowBar",
+          color: C.gold, shape: "circle", text: "چرخشِ احتمالی" });
+      }
+    }
+    evMarks.sort((a, b) => a.time - b.time);   // LWC requires markers in ascending time order
     projSeries.setMarkers(evMarks);
     // pin this prediction to history (so past predictions stay on the chart) and redraw the ghosts
     recordProjection(STATE.symbol, STATE.tf, sig);
@@ -478,6 +496,7 @@ function showZonePop(z, xpx, ypx) {
     <div class="row"><span>هدف TP2 (2R)</span><b style="color:var(--green)">${fmtP(z.tp2)}</b></div>
     <div class="row"><span>اعتماد / فاصله</span><b>${z.confidence} · ${z.dist_atr ?? "—"} ATR</b></div>
     ${z.combo_score != null ? `<div class="row"><span>تلفیقِ سبک‌ها</span><b>${z.combo_score}/3${z.combo_confirmed ? " ✅" : ""}</b></div>` : ""}
+    ${z.proj_aligned ? `<div class="row"><span>پیش‌بینیِ روند</span><b style="color:var(--green)">✓ هم‌جهت</b></div>` : (z.proj_against ? `<div class="row"><span>پیش‌بینیِ روند</span><b style="color:var(--red)">⚠ خلافِ پیش‌بینی</b></div>` : "")}
     ${reasons.length ? `<div class="rk">دلایلِ ریسک: ${reasons.join("، ")}</div>` : ""}`;
   pop.hidden = false;
   const cw = chartEl.clientWidth, ch = chartEl.clientHeight;
