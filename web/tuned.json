@@ -66,57 +66,15 @@
   },
   "projection_model": {
     "_note": "idea-2 per-TF logistic (re-weighted direction + honest abstention). Fit by backtest/fit_projection_model.py, validated out-of-time by backtest/walkforward_idea2.py (overall 0.485->0.511 full-cov; gate ~0.535 @ 38% coverage). Remove this key to revert project() to the legacy hand-tuned score.",
-    "features": [
-      "bias",
-      "slope_sign",
-      "rsi_pull",
-      "rsi_z",
-      "div",
-      "trend_strength",
-      "ts*slope",
-      "rsi_z*1{H1}"
-    ],
-    "M5": {
-      "intercept": -0.09224,
-      "weights": [
-        0.12816,
-        -0.03618,
-        -0.21567,
-        -0.24761,
-        0.22425,
-        0.00799,
-        0.03497,
-        0.0
-      ],
-      "tau": 0.04
-    },
-    "M15": {
-      "intercept": -0.06144,
-      "weights": [
-        -0.03767,
-        -0.04887,
-        0.08386,
-        -0.02866,
-        -0.27712,
-        0.00923,
-        -0.05627,
-        0.0
-      ],
-      "tau": 0.02
-    },
-    "H1": {
-      "intercept": 0.11909,
-      "weights": [
-        0.17714,
-        0.02221,
-        -0.10578,
-        -0.07682,
-        0.12956,
-        -0.08239,
-        -0.04489,
-        -0.07682
-      ],
-      "tau": 0.0
-    }
+    "features": ["bias", "slope_sign", "rsi_pull", "rsi_z", "div", "trend_strength", "ts*slope", "rsi_z*1{H1}"],
+    "M5":  { "intercept": -0.09224, "weights": [0.12816, -0.03618, -0.21567, -0.24761, 0.22425, 0.00799, 0.03497, 0.0], "tau": 0.04 },
+    "M15": { "intercept": -0.06144, "weights": [-0.03767, -0.04887, 0.08386, -0.02866, -0.27712, 0.00923, -0.05627, 0.0], "tau": 0.02 },
+    "H1":  { "intercept": 0.11909, "weights": [0.17714, 0.02221, -0.10578, -0.07682, 0.12956, -0.08239, -0.04489, -0.07682], "tau": 0.0 }
+  },
+  "swing_model": {
+    "_note": "per-TF swing-reach (ATR units): median forward reach up/dn + turn-bar fraction over H=48. Drives the projection arc amplitude + peak so the counter-swing is drawn at its REAL ~3 ATR size (legacy draw was a fixed 0.42 ATR, ~7x too small). Fit + leave-symbols-out validated by backtest/fit_swing_model.py (conditioning on features did not beat the median, so constants ship). Remove this key to revert the draw to 0.42*ATR.",
+    "M5":  { "up": 2.914, "dn": 3.182, "turn_up": 0.417, "turn_dn": 0.479, "floor": 0.6, "cap": 9.0 },
+    "M15": { "up": 2.595, "dn": 3.696, "turn_up": 0.375, "turn_dn": 0.521, "floor": 0.6, "cap": 9.0 },
+    "H1":  { "up": 2.79,  "dn": 3.243, "turn_up": 0.438, "turn_dn": 0.479, "floor": 0.6, "cap": 9.0 }
   }
 }

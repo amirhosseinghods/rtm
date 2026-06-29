@@ -168,8 +168,26 @@ def proj_predict(model, c, atr, rsi_last, divs, bias_val, tf_minutes):
     return 1.0 / (1.0 + np.exp(-max(-30.0, min(30.0, z))))
 
 
+def proj_reach(swing, tf_minutes):
+    """Per-TF swing reach (ATR units) for the projection arc: (up_atr, dn_atr, turn_up, turn_dn).
+    Reads the constant per-TF medians from tuned.json `swing_model` (fit + validated by
+    backtest/fit_swing_model.py — the real forward reach is ~3 ATR, not the legacy 0.42*ATR).
+    Returns None to fall back to the legacy fixed amplitude."""
+    if not swing:
+        return None
+    m = swing.get(_proj_tf_key(tf_minutes))
+    if not m:
+        return None
+    up = float(m.get("up", 0) or 0); dn = float(m.get("dn", 0) or 0)
+    if up <= 0 or dn <= 0:
+        return None
+    fl = float(m.get("floor", 0.6)); cap = float(m.get("cap", 9.0))
+    up = min(cap, max(fl, up)); dn = min(cap, max(fl, dn))
+    return (up, dn, float(m.get("turn_up", 0.45)), float(m.get("turn_dn", 0.5)))
+
+
 def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
-            tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48, model=None):
+            tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48, model=None, swing=None):
     """Honest, ZONE-AWARE directional projection (a hypothesis, not a promise), drawn as an
     ORGANIC wavy path. The path runs toward the nearest opposing zone; on contact it either
     REACTS (bounces/returns) or BREAKS through and continues — decided by zone strength
@@ -236,10 +254,26 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
         zlist.append({**z, "edge": float(edge), "bot": float(zb), "top": float(zt)})
 
     last_t = time[-1]
-    amp = 0.42 * a
+    # ---- arc amplitude from the REAL forward reach (swing model) ----------------------------
+    # The legacy draw used a fixed 0.42*ATR wave — ~7x smaller than the real ~3 ATR median reach,
+    # so the counter-swing ("price pops up, THEN drops" and vice-versa) looked tiny. We now size the
+    # visible counter-swing to a fraction of the median ADVERSE reach and let the net trend run to the
+    # median FAVOURABLE reach, with the arc peaking at the empirical turn-bar. Falls back to legacy.
+    R = proj_reach(swing, tf_minutes)
+    if R is not None:
+        up_atr, dn_atr, turn_up, turn_dn = R
+        fav = up_atr if dirn >= 0 else dn_atr      # reach in the call's direction
+        adv = dn_atr if dirn >= 0 else up_atr      # counter-swing reach (against the call)
+        turn_frac = turn_up if dirn >= 0 else turn_dn
+        CS_GAIN = 0.55                              # draw 55% of the median adverse reach as the visible arc
+        amp = float(np.clip(CS_GAIN * adv, 0.42, 4.5)) * a
+        drift_coeff = float(np.clip(fav / (0.30 * n_future), 0.10, 0.45))
+    else:
+        amp = 0.42 * a; drift_coeff = 0.16; turn_frac = 0.45
+    turn_k = max(3.0, turn_frac * n_future)         # bar where the counter-swing peaks
     pts = []; events = []
     cur_dir = dirn; cur_conf = conf
-    drift = cur_dir * cur_conf * 0.16 * a
+    drift = cur_dir * cur_conf * drift_coeff * a
     hit_ids = set()
     base_leg = base       # absolute anchor of the current leg
     k0 = 0                # bar index where the current leg started (decay/phase reset on events)
@@ -266,7 +300,11 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
     for k in range(1, n_future + 1):
         kk = k - k0                                 # bars since the current leg started
         decay = np.exp(-0.018 * kk)
-        wave = amp * decay * (0.6 * np.sin(kk * 0.55) + 0.4 * np.sin(kk * 0.23 + 1.3))
+        # counter-swing LEADS against the trend at realistic amplitude (rises to ~amp at the turn-bar,
+        # then returns to 0), with a small organic wiggle riding on top; net trend = drift.
+        lead = -cur_dir * amp * np.sin(np.pi * min(kk / (2.0 * turn_k), 1.0))
+        wiggle = 0.30 * amp * decay * np.sin(kk * 0.5 + 0.7)
+        wave = lead + wiggle
         px = base_leg + drift * kk * (1.0 - 0.01 * kk) + wave   # absolute per-leg (stays wavy)
         ft = last_t + pd.Timedelta(minutes=tf_minutes * k)
         tsec = int(ft.value // 10**9)
@@ -291,7 +329,7 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
                     cur_conf = min(0.9, cur_conf * 1.1)
                     base_leg = z["top"] + 0.15 * a if cur_dir > 0 else z["bot"] - 0.15 * a
                     px = base_leg
-                drift = cur_dir * cur_conf * 0.16 * a
+                drift = cur_dir * cur_conf * drift_coeff * a
                 k0 = k
                 target = next_zone(base_leg, cur_dir)
         pts.append({"time": tsec, "value": round(float(px), 6)})

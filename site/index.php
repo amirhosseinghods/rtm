@@ -15,7 +15,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
   <link rel="stylesheet" href="/style.css" />
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-<body>
+<body class="chart-only">
   <header>
     <div class="brand">
       <span class="logo">ر</span>
@@ -33,6 +33,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
         <span id="delayedTag" class="delayed-tag" hidden>~تأخیری</span>
       </div>
       <button id="refreshBtn" title="بروزرسانی">⟳</button>
+      <button id="panelToggle" title="نمایش/مخفی‌کردنِ پنلِ تحلیل">☰</button>
       <div class="user-chip">
         <span class="uname"><?= h($me['u']) ?></span>
         <?php if ($me['role'] === 'admin'): ?><a class="chip-link" href="admin.php">مدیریت</a><?php endif; ?>

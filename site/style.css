@@ -353,3 +353,32 @@ main {
   font-size: 12.5px; color: var(--tx-2); cursor: pointer; }
 .ind-row:hover { background: var(--bg-2); color: var(--tx); }
 .ind-row input { accent-color: var(--gold); width: 14px; height: 14px; cursor: pointer; }
+
+/* ============================================================================
+   CHART-ONLY (immersive) mode — "I want to see nothing but the chart".
+   Toggled by #panelToggle; the chart fills the viewport, the analysis panel,
+   legend and brand are hidden, and the verdict floats over the chart corner.
+   ============================================================================ */
+#panelToggle { font-size: 15px; padding: 8px 12px; line-height: 1; }
+body.chart-only header { padding: 8px 16px; }
+body.chart-only .brand { display: none; }
+body.chart-only main {
+  grid-template-columns: 1fr; grid-template-rows: 1fr; gap: 0;
+  padding: 8px; height: calc(100vh - 56px); min-height: 0;
+}
+body.chart-only .panel { display: none; }
+body.chart-only .legend,
+body.chart-only #tfHealth,
+body.chart-only #learnBar { display: none; }
+body.chart-only .chart-col { gap: 0; position: relative; }
+body.chart-only #chart { flex: 1 1 auto; height: 100%; min-height: 0; }
+/* verdict floats over the chart's top corner (RTL: top-right) so it never steals chart space */
+body.chart-only #verdict {
+  position: absolute; z-index: 15; top: 12px; inset-inline-start: 12px; max-width: min(72%, 560px);
+  background: rgba(15,18,23,.82); backdrop-filter: blur(7px); pointer-events: none;
+  box-shadow: var(--sh-2);
+}
+@media (max-width: 980px) {
+  body.chart-only main { grid-template-rows: 1fr; height: calc(100vh - 56px); }
+  body.chart-only #chart { height: 100%; }
+}

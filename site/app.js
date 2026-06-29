@@ -158,6 +158,50 @@ rsiSeries.attachPrimitive(rsiLabels);
 // trend projection (dashed gold) — a hypothesis, clearly secondary
 const projSeries = chart.addLineSeries({ color: C.gold, lineWidth: 2, lineStyle: 2,
   priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+
+/* ---------- persisted projection history (don't erase past predictions) ----------
+   Every projection the engine draws is snapshotted (anchored at the bar it was made) and kept
+   on the chart as a faint dotted "ghost" line — so the user can watch, into the future, whether
+   each past prediction actually played out. Stored per symbol|TF in localStorage and survives
+   reloads. The newest is drawn bright (projSeries); older ones are the dim ghosts. */
+const GHOST_MAX = 14;
+const ghostSeries = [];
+function ensureGhostPool(n) {
+  while (ghostSeries.length < n)
+    ghostSeries.push(chart.addLineSeries({ color: "rgba(212,175,55,.26)", lineWidth: 1, lineStyle: 1,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }));
+}
+function clearGhosts() { ghostSeries.forEach((s) => { try { s.setData([]); } catch (e) {} }); }
+const projKey = (sym, tf) => `rtm_proj_hist_${sym}_${tf}`;
+function loadProjHist(sym, tf) { try { return JSON.parse(localStorage.getItem(projKey(sym, tf)) || "[]"); } catch (e) { return []; } }
+function saveProjHist(sym, tf, arr) { try { localStorage.setItem(projKey(sym, tf), JSON.stringify(arr.slice(-GHOST_MAX))); } catch (e) {} }
+function recordProjection(sym, tf, sig) {
+  const pts = sig.projection && sig.projection.points;
+  if (!pts || !pts.length) return;
+  const anchorTime = STATE.candleTimes.length ? STATE.candleTimes[STATE.candleTimes.length - 1] : (pts[0].time);
+  const snap = { anchorTime, anchorPrice: sig.price, dir: sig.projection.dir_val,
+                 key: pts[0].time, points: pts };
+  const hist = loadProjHist(sym, tf);
+  const last = hist[hist.length - 1];
+  if (last && last.key === snap.key) hist[hist.length - 1] = snap;   // same anchor bar -> refine in place
+  else hist.push(snap);                                              // new bar -> new pinned prediction
+  saveProjHist(sym, tf, hist);
+}
+function drawGhosts(sym, tf) {
+  const hist = loadProjHist(sym, tf);
+  const ghosts = hist.slice(0, -1);   // all but the live one (the live one is the bright projSeries)
+  ensureGhostPool(ghosts.length);
+  clearGhosts();
+  ghosts.forEach((snap, i) => {
+    const start = (snap.anchorTime != null) ? [{ time: snap.anchorTime, value: snap.anchorPrice }] : [];
+    const seen = new Set(); const clean = [];
+    [...start, ...snap.points]
+      .filter((p) => Number.isFinite(p.time) && Number.isFinite(p.value))
+      .sort((a, b) => a.time - b.time)
+      .forEach((p) => { if (!seen.has(p.time)) { seen.add(p.time); clean.push(p); } });
+    try { ghostSeries[i].setData(clean); } catch (e) {}
+  });
+}
 let _sized = false;
 function fitChart() {
   const w = chartEl.clientWidth, h = chartEl.clientHeight;
@@ -320,28 +364,41 @@ async function loadChart(keepView, deep) {
 }
 // extend the chart months into the past WITHOUT moving the current view
 async function loadHistory() { try { await loadChart(true, true); } catch (e) {} }
-// keep only the newest candle(s) live, so the loaded deep history isn't wiped each minute
-async function tickCandle() {
+// LIVE candle tick — keep the newest candle(s) fresh so the chart trails the real market by a
+// few seconds (NOT the 15-min commit cadence). Polls a small window from the proxy, updates the
+// forming bar, appends newly-closed bars, and (only if the user is already near the right edge)
+// follows real-time so the chart never "falls behind". An in-flight guard stops slow proxy
+// responses from piling up.
+let _tickBusy = false;
+async function liveTick() {
+  if (_tickBusy) return; _tickBusy = true;
   try {
+    const ts = chart.timeScale();
+    const sp = ts.scrollPosition();              // ~0 at the real-time edge, negative when scrolled back
+    const follow = (sp == null) || sp > -8;       // don't yank the view if the user scrolled into history
+    let lastT = STATE.candleTimes.length ? STATE.candleTimes[STATE.candleTimes.length - 1] : 0;
+    let added = false, lastClose = null;
     if (STATIC) {
-      // the chart body is committed Binance JSON (≤15 min old); top up the live right edge from
-      // the proxy, bridging the commit gap. LWC requires non-decreasing times, so only feed bars
-      // at/after the last one we have.
-      const b = binSym(STATE.symbol); if (!b) return;
-      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: 8 }, 6000);
-      let lastT = STATE.candleTimes.length ? STATE.candleTimes[STATE.candleTimes.length - 1] : 0;
-      rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }))
-        .filter((c) => c.time >= lastT)
-        .forEach((c) => { candles.update(c); if (c.time > lastT) { STATE.candleTimes.push(c.time); lastT = c.time; } });
-      return;
+      const b = binSym(STATE.symbol);
+      if (!b) return;                             // XAUUSD has no exchange ticker -> quote handles it
+      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: 3 }, 5000);
+      (rows || []).map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }))
+        .filter((c) => Number.isFinite(c.time) && c.time >= lastT)
+        .forEach((c) => { candles.update(c); lastClose = c.close; if (c.time > lastT) { STATE.candleTimes.push(c.time); lastT = c.time; added = true; } });
+    } else {
+      const d = await api(`/api/ohlcv?symbol=${STATE.symbol}&tf=${STATE.tf}&limit=3`);
+      (d.bars || []).forEach((b) => {
+        const t = Math.floor(Date.parse(b.time.replace(" ", "T") + "Z") / 1000);
+        if (Number.isFinite(t) && t >= lastT) { candles.update({ time: t, open: b.open, high: b.high, low: b.low, close: b.close }); lastClose = b.close; if (t > lastT) { STATE.candleTimes.push(t); lastT = t; added = true; } }
+      });
     }
-    const d = await api(`/api/ohlcv?symbol=${STATE.symbol}&tf=${STATE.tf}&limit=3`);
-    (d.bars || []).forEach((b) => {
-      const t = Math.floor(Date.parse(b.time.replace(" ", "T") + "Z") / 1000);
-      if (Number.isFinite(t)) candles.update({ time: t, open: b.open, high: b.high, low: b.low, close: b.close });
-    });
+    if (lastClose != null && Number.isFinite(lastClose)) $("#livePrice").textContent = fmt(lastClose);
+    if (added && follow) ts.scrollToRealTime();   // keep the right edge pinned to "now"
   } catch (e) {}
+  finally { _tickBusy = false; }
 }
+const LIVE_MS = 3000;   // poll cadence -> chart trails the market by <=5s in every timeframe
+function startLiveTicks() { (function loop() { liveTick().finally(() => setTimeout(loop, LIVE_MS)); })(); }
 
 function drawSignalOverlays(sig) {
   clearOverlays();
@@ -385,7 +442,10 @@ function drawSignalOverlays(sig) {
       text: e.type === "bounce" ? "واکنش" : "شکست",
     }));
     projSeries.setMarkers(evMarks);
-  } else { projSeries.setData([]); projSeries.setMarkers([]); }
+    // pin this prediction to history (so past predictions stay on the chart) and redraw the ghosts
+    recordProjection(STATE.symbol, STATE.tf, sig);
+    drawGhosts(STATE.symbol, STATE.tf);
+  } else { projSeries.setData([]); projSeries.setMarkers([]); clearGhosts(); }
   renderVerdict(sig.verdict);
 }
 
@@ -555,14 +615,28 @@ async function reload(analyzeToo) {
   loadLearning();
 }
 
+/* ---------- chart-only / analysis-panel toggle ---------- */
+function applyPanelMode() {
+  const on = localStorage.getItem("rtm_chart_only") !== "0";   // default = chart-only (just the chart)
+  document.body.classList.toggle("chart-only", on);
+  const btn = $("#panelToggle"); if (btn) { btn.textContent = on ? "☰" : "✕"; btn.title = on ? "نمایشِ پنلِ تحلیل" : "فقط چارت"; }
+  requestAnimationFrame(fitChart);   // chart width changed -> resize after layout settles
+}
+
 (async function init() {
   await loadSymbols();
   await loadTFs();
   $("#analyzeBtn").onclick = analyze;
   $("#logBtn").onclick = logSetup;
   $("#refreshBtn").onclick = () => reload(true);
+  $("#panelToggle").onclick = () => {
+    const on = document.body.classList.contains("chart-only");
+    localStorage.setItem("rtm_chart_only", on ? "0" : "1");   // flip
+    applyPanelMode();
+  };
+  applyPanelMode();
   await reload(true);
   setInterval(tickQuote, 5000);
   tickQuote();
-  setInterval(() => tickCandle(), 60000);      // update only the newest candle (keeps deep history)
+  startLiveTicks();      // live candle/price ticks (<=5s lag), replaces the old 60s updater
 })();
