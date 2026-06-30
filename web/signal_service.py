@@ -175,13 +175,13 @@ def _verdict(zones, primary, price, atr, rstate, tf):
         ready.sort(key=lambda z: (order[z["confidence"]], rank[z["risk_rating"]["level"]]))
         z = ready[0]
         state = "BUY_NOW" if z["action"] == "BUY" else "SELL_NOW"
-        pp = z.get("partial") or {}
-        scale_txt = (f" برنامهٔ خروجِ پله‌ای: ۱/۳ در {pp.get('scale_price')} (~{pp.get('scale_R')}R)، "
-                     f"استاپ به نقطهٔ سربه‌سر، بقیه تا {pp.get('runner_tp')} (~{pp.get('runner_R')}R)."
-                     if pp else "")
-        txt = (f"الان قیمت داخل/کنارِ ناحیهٔ {z['action_fa']} است — آمادهٔ ورود. "
-               f"ورود ~{z['entry']}، استاپ {z['sl']}.{scale_txt} "
-               f"ریسکِ این ناحیه: {z['risk_rating']['level']}. اول تأییدیهٔ کندلی بگیر.")
+        # The user asked NOT to be handed entry/stop automatically — only when they click the marked
+        # zone. So the verdict announces the direction + which zone + risk, and tells them to click
+        # the zone on the chart to reveal entry / stop / partial ladder. (Levels still ride on the
+        # zone object for the click popover; we just don't print them in the headline.)
+        txt = (f"یک ناحیهٔ {z['action_fa']} ({z['src']}) آماده است و قیمت کنار/داخلِ آن است. "
+               f"ریسکِ این ناحیه: {z['risk_rating']['level']}. "
+               f"برای دیدنِ ورود، استاپ و پله‌ها روی همین ناحیه روی چارت کلیک کن — اول تأییدیهٔ کندلی بگیر.")
         return {"state": state, "action": z["action"], "action_fa": z["action_fa"],
                 "risk_level": z["risk_rating"]["level"], "zone": _zref(z), "text": txt}
     # no trend setup ready → is there a REVERSAL setup right at price? (the user's style,
