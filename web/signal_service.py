@@ -154,20 +154,23 @@ def _verdict(zones, primary, price, atr, rstate, tf):
     sel = TUNED().get("selectivity", {})
     rmin = float(sel.get("room_min", 2.0)); need_htf = bool(sel.get("require_htf", True))
     need_agree = bool(sel.get("require_model_agree", True))
+    act_tfs = sel.get("actionable_tf", ["M5"])
+    tf_ok = (not act_tfs) or (tf in act_tfs)   # operating point is M5-only; don't fire BUY_NOW off-regime
     def passes(z):
         if not (z["actionable_now"] and z["confidence"] != "LOW" and z["risk_rating"]["level"] != "زیاد"):
             return False
         if need_htf and not str(z["src"]).endswith("-1h"):
             return False
-        if z.get("room_R") is not None and z["room_R"] < rmin:
+        # FAIL-CLOSED room: missing room is not a pass (it can't be claimed at the validated edge)
+        if z.get("room_R") is None or z["room_R"] < rmin:
             return False
         if z.get("model_against"):
             return False
-        # validated ~76% gate: require a CONFIDENT model agreement (only when the model ran)
-        if need_agree and z.get("model_p_up") is not None and not z.get("model_agree"):
+        # validated ~76% gate: require a CONFIDENT model agreement — FAIL-CLOSED (missing model ⇒ no fire)
+        if need_agree and not z.get("model_agree"):
             return False
         return True
-    ready = [z for z in zones if passes(z)]
+    ready = [z for z in zones if passes(z)] if tf_ok else []
     if ready:
         ready.sort(key=lambda z: (order[z["confidence"]], rank[z["risk_rating"]["level"]]))
         z = ready[0]

@@ -11,19 +11,22 @@
     "max_per_side": 3
   },
   "partial": {
-    "_note": "Validated partial-exit ladder (backtest 10-agent fan-out, 2026-06-29): HTF zone + room>=2R + bank 1/3 at 0.5R -> move stop to break-even -> runner to 2R gives ~70% NET win-rate, PF 1.92, expR +0.276 (OOS-stable). tp1_R is the scale-out level in R. Delete this key to revert to plain 2R.",
-    "tp1_R": 0.5,
+    "_note": "Validated partial-exit ladder. With the model-agree M5 gate: bank 1/3 at tp1_R -> move stop to break-even -> runner to 2R. tp1 SWEEP 2026-06-30 (n=41, OOS+by-dir robust): tp1=0.5 -> 75.6% net-win / expR +0.533; tp1=0.4 -> 78.0% / +0.470 (LONG 82.6%, SHORT 72.2%, both OOS halves +); tp1=0.3 -> 78.0% / +0.411. Chose 0.4 = highest win-rate that keeps PF 3.1 / expR +0.47. tp1_R is the scale-out level in R. Delete this key to revert to plain 2R.",
+    "tp1_R": 0.4,
     "tp1_frac": 0.3333,
     "move_be": true,
     "tp2_R": 2.0
   },
   "selectivity": {
-    "_note": "Gate for the BUY_NOW/SELL_NOW verdict — the validated ~76% operating point (10-agent matrix 2026-06-29). Only HTF (OB-1h/FL-1h) with-trend zones with >=room_min R of clear room AND a CONFIDENT behavioural-model agreement (|p_up-0.5|>=model_tau in the zone's direction) fire an actionable signal. This lifted net-win 70->76%, expR +0.27->+0.53, PF 1.9->3.2 (OOS-stable). Set require_model_agree=false to relax back to the no-model gate.",
+    "_note": "Gate for the BUY_NOW/SELL_NOW verdict — the validated ~76% operating point (10-agent matrix 2026-06-29; re-confirmed 2026-06-30 at 75.6% net-win after the live-leak fix). FAIL-CLOSED: only actionable_tf timeframes, HTF (OB-1h/FL-1h) with-trend zones with >=room_min R of clear room AND a CONFIDENT behavioural-model agreement (|p_up-0.5|>=model_tau) fire an actionable signal — a zone missing room or model confirmation is NOT counted. actionable_tf=[M5] because the partial-exit ladder was validated ONLY on M5 (M15/H1 didn't hold); tau sweep 0.05/0.06/0.07/0.08 -> 75.6/71.9/75.0/66.7%, so 0.05 stays optimal. Set require_model_agree=false to relax back to the no-model gate.",
     "room_min": 2.0,
     "require_htf": true,
     "use_model_gate": true,
     "require_model_agree": true,
-    "model_tau": 0.05
+    "model_tau": 0.05,
+    "actionable_tf": [
+      "M5"
+    ]
   },
   "stops": {
     "_note": "SL geometry, learned per source/symbol by optimize.run() from MFE/MAE of resolved setups. buf_atr = breathing room beyond the zone (xATR); min_atr = floor stop distance (xATR). disabled_sources are auto-muted when their stop-rate stays high with negative expR. Delete this key to revert to hardcoded buf=0.3 / minStop.",

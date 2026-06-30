@@ -35,16 +35,37 @@ def _partial_cfg():
             "tp2_R": float(t2) if t2 != "struct" else 2.0, "move_be": bool(p.get("move_be", True))}
 
 
-def _actionable(z):
-    """Does this zone match what the system actually RECOMMENDS (the validated ~76% gate)? Only
-    HTF (OB-1h/FL-1h) with-trend zones with clear room AND a confident behavioural-model
-    agreement. The headline win-rate is measured on THESE — the trades the user is told to take."""
-    room = z.get("room_R")
-    base = bool(str(z.get("src", "")).endswith("-1h") and z.get("with_trend")
-                and (room is None or room >= 2.0) and not z.get("model_against"))
-    if not base:
+def _sel_cfg():
+    """Selectivity gate from tuned.json — the validated operating point's filters."""
+    try:
+        s = (json.load(open(_TUNED_PATH, encoding="utf-8")) or {}).get("selectivity", {})
+    except Exception:
+        s = {}
+    return s
+
+
+def _actionable(z, tf=None):
+    """Does this zone match what the system actually RECOMMENDS — the validated ~76% operating
+    point? FAIL-CLOSED so live signals can't sneak past the gate when a field is missing:
+      • timeframe must be M5 (the ONLY validated TF for the partial-exit ladder; M15/H1 weren't),
+      • HTF (OB-1h/FL-1h) with-trend zone,
+      • clear room ≥ room_min R (missing room ⇒ NOT actionable),
+      • behavioural model must CONFIDENTLY AGREE (missing/contradicting model ⇒ NOT actionable).
+    The headline win-rate is measured on THESE — the trades the user is told to take, so a zone we
+    can't fully verify is honestly excluded rather than counted as a 76% recommendation."""
+    sel = _sel_cfg()
+    tfs = sel.get("actionable_tf", ["M5"])
+    if tf is not None and tfs and tf not in tfs:
         return False
-    if z.get("model_p_up") is not None and not z.get("model_agree"):   # model ran but didn't confidently agree
+    if not (str(z.get("src", "")).endswith("-1h") and z.get("with_trend")):
+        return False
+    if z.get("model_against"):
+        return False
+    room = z.get("room_R")
+    rmin = float(sel.get("room_min", 2.0))
+    if room is None or room < rmin:                       # fail-closed on room
+        return False
+    if sel.get("require_model_agree", True) and not z.get("model_agree"):   # fail-closed on model
         return False
     return True
 
@@ -71,12 +92,28 @@ def _key(symbol, tf, dr, src, entry):
     return f"{symbol}|{tf}|{dr}|{src}|{round(float(entry), 4)}"
 
 
+# A level that just got stopped out keeps re-firing the same losing signal for a while (the live
+# forward-test showed ONE level spawn 3 actionable shorts that ALL lost). Block an *actionable*
+# re-entry at the same level for this long after it resolves as a LOSS — learn from the stop.
+COOLDOWN_S = 6 * 3600
+
+
 def record(sig, now=None):
-    """Save each zone the system places (deduped while still OPEN)."""
+    """Save each zone the system places. Deduped while OPEN, and an actionable re-entry is held
+    off for COOLDOWN_S after the same level last stopped out (so a chop level can't rack up
+    repeated losses in the headline)."""
     now = now or int(time.time())
     rows = _read()
     open_keys = {_key(r["symbol"], r["tf"], r["dir"], r["src"], r["entry"])
                  for r in rows if r["status"] == "OPEN"}
+    # most-recent LOSS exit per level → cooldown window
+    last_loss = {}
+    for r in rows:
+        if r.get("status") == "LOSS" and r.get("origin") == "live":
+            k = _key(r["symbol"], r["tf"], r["dir"], r["src"], r["entry"])
+            et = r.get("exit_ts") or r.get("ts") or 0
+            if et > last_loss.get(k, 0):
+                last_loss[k] = et
     added = 0
     for z in (sig.get("zones") or []):
         if z.get("entry") is None or z.get("sl") is None or z.get("tp2") is None:
@@ -84,13 +121,20 @@ def record(sig, now=None):
         k = _key(sig["symbol"], sig["tf"], z["dir"], z["src"], z["entry"])
         if k in open_keys:
             continue
+        act = _actionable(z, sig["tf"])
+        if act and (now - last_loss.get(k, 0)) < COOLDOWN_S:   # recently stopped here → don't recommend again yet
+            act = False
         rows.append({
             "ts": now, "symbol": sig["symbol"], "tf": sig["tf"], "dir": z["dir"],
             "src": z["src"], "grade": z.get("grade"), "confidence": z.get("confidence"),
             "combo_score": z.get("combo_score"), "combo_confirmed": bool(z.get("combo_confirmed")),
             "with_trend": bool(z.get("with_trend")), "setup_type": z.get("setup_type"),
             "entry": z["entry"], "sl": z["sl"], "tp2": z["tp2"], "tp3": z.get("tp3"),
-            "risk": z.get("risk"), "actionable": _actionable(z),
+            "risk": z.get("risk"), "actionable": act,
+            # persist the gate inputs so live setups stay AUDITABLE (the old rows lost these → the
+            # headline couldn't tell a real 76% trade from an un-verified one).
+            "room_R": z.get("room_R"), "model_p_up": z.get("model_p_up"),
+            "model_agree": z.get("model_agree"), "model_against": z.get("model_against"),
             "status": "OPEN", "R": None, "exit_ts": None, "origin": "live",
         })
         open_keys.add(k); added += 1
@@ -191,9 +235,11 @@ def train_from_history(symbols=None, tf="M5"):
     """Seed the store with REAL past zone outcomes (incl. stops) from the validated engine,
     scored under the DEPLOYED strategy: HTF zones + clear-room gate + partial 0.5R→BE→2R
     (the 10-agent operating point). These are the trades the system actually recommends."""
+    pc = _partial_cfg(); sc = _sel_cfg()                  # train under the SAME ladder/gate the strategy trades
     os.environ["FD_SRC"] = "1h"; os.environ["FD_CONF"] = "room"
-    os.environ["FD_PARTIAL"] = "1"; os.environ["FD_TP1"] = "0.5"; os.environ["FD_RUNNER"] = "2.0"
-    os.environ["FD_MODEL"] = "agree"; os.environ["FD_MTAU"] = "0.05"   # confident model agreement (validated ~76%)
+    os.environ["FD_PARTIAL"] = "1"; os.environ["FD_TP1"] = str(pc["tp1_R"]); os.environ["FD_RUNNER"] = str(pc["tp2_R"])
+    os.environ["FD_TP1FRAC"] = str(pc["tp1_frac"]); os.environ["FD_BE"] = "1" if pc["move_be"] else "0"
+    os.environ["FD_MODEL"] = "agree"; os.environ["FD_MTAU"] = str(sc.get("model_tau", 0.05))   # confident model agreement
     import importlib, numpy as np
     import rtm_bt as B, bt_structure as BS
     importlib.reload(BS)
