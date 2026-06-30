@@ -37,6 +37,7 @@ MINSTOP_ATR = os.environ.get("FD_MINSTOP")               # None = per-symbol def
 OUT_CSV  = os.environ.get("FD_OUT", os.path.expanduser("~/Desktop/trade/backtest/bt_structure_rows.csv"))
 MODEL_MODE = os.environ.get("FD_MODEL", "off")           # off | veto | agree  (behavioural-model gate)
 MTAU = float(os.environ.get("FD_MTAU", "0.0"))           # agreement band: |p_up-0.5| must exceed this
+ROOM_MIN = float(os.environ.get("FD_ROOM", "2.0"))       # min clear room (R) to the opposing zone for the "room" gate
 
 
 def _proj_model(tfmin):
@@ -214,8 +215,9 @@ def collect(D, sym, sess):
                 opp = cDt[ei] if (not np.isnan(cDt[ei]) and cDt[ei] < e) else (aDt[ei] if (not np.isnan(aDt[ei]) and aDt[ei] < e) else np.nan)
             kstruct = ((opp - e)/risk) if (dr == 1 and not np.isnan(opp)) else (((e - opp)/risk) if (dr == -1 and not np.isnan(opp)) else np.nan)
             if "room" in CONF.split("+") or CONF == "all":
-                # require clear room to the 2R target: the opposing zone must be >=2R away (else 2R is blocked)
-                if (not np.isnan(kstruct)) and kstruct < 2.0: continue
+                # require clear room to the target: the opposing zone must be >= FD_ROOM R away
+                # (else the target is blocked). Default 2.0; sweepable to study the frequency/edge trade-off.
+                if (not np.isnan(kstruct)) and kstruct < ROOM_MIN: continue
             # forward path -> resolve each rule
             targets = [k for _, k in RULES]
             has_struct = (not np.isnan(kstruct)) and kstruct >= 0.3
