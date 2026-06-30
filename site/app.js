@@ -369,6 +369,7 @@ async function loadHistory() { try { await loadChart(true, true); } catch (e) {}
 // forming bar, appends newly-closed bars, and (only if the user is already near the right edge)
 // follows real-time so the chart never "falls behind". An in-flight guard stops slow proxy
 // responses from piling up.
+const TF2SEC = { M1: 60, M5: 300, M15: 900, H1: 3600, H4: 14400 };
 let _tickBusy = false;
 async function liveTick() {
   if (_tickBusy) return; _tickBusy = true;
@@ -377,28 +378,36 @@ async function liveTick() {
     const sp = ts.scrollPosition();              // ~0 at the real-time edge, negative when scrolled back
     const follow = (sp == null) || sp > -8;       // don't yank the view if the user scrolled into history
     let lastT = STATE.candleTimes.length ? STATE.candleTimes[STATE.candleTimes.length - 1] : 0;
+    // GAP-FILL: the base candles come from the CI export (can be 15min+ stale) and the market keeps
+    // moving, so fetch ENOUGH bars to bridge every missing candle between the last one we have and
+    // now — never just the last 3 (that left a visible gap). Adaptive: light when fresh, deep on a gap.
+    const barSec = TF2SEC[STATE.tf] || 300;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const need = lastT ? Math.min(1000, Math.max(3, Math.ceil((nowSec - lastT) / barSec) + 2)) : 3;
     let added = false, lastClose = null;
     if (STATIC) {
       const b = binSym(STATE.symbol);
       if (!b) return;                             // XAUUSD has no exchange ticker -> quote handles it
-      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: 3 }, 5000);
+      const rows = await binFetch("klines", { symbol: b, interval: TF2IV[STATE.tf] || "5m", limit: need }, 6000);
       (rows || []).map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }))
         .filter((c) => Number.isFinite(c.time) && c.time >= lastT)
         .forEach((c) => { candles.update(c); lastClose = c.close; if (c.time > lastT) { STATE.candleTimes.push(c.time); lastT = c.time; added = true; } });
     } else {
-      const d = await api(`/api/ohlcv?symbol=${STATE.symbol}&tf=${STATE.tf}&limit=3`);
+      const d = await api(`/api/ohlcv?symbol=${STATE.symbol}&tf=${STATE.tf}&limit=${need}`);
       (d.bars || []).forEach((b) => {
         const t = Math.floor(Date.parse(b.time.replace(" ", "T") + "Z") / 1000);
         if (Number.isFinite(t) && t >= lastT) { candles.update({ time: t, open: b.open, high: b.high, low: b.low, close: b.close }); lastClose = b.close; if (t > lastT) { STATE.candleTimes.push(t); lastT = t; added = true; } }
       });
     }
     if (lastClose != null && Number.isFinite(lastClose)) $("#livePrice").textContent = fmt(lastClose);
-    if (added && follow) ts.scrollToRealTime();   // keep the right edge pinned to "now"
+    if (follow) ts.scrollToRealTime();            // keep the right edge pinned to "now" every tick (no lag)
   } catch (e) {}
   finally { _tickBusy = false; }
 }
-const LIVE_MS = 3000;   // poll cadence -> chart trails the market by <=5s in every timeframe
-function startLiveTicks() { (function loop() { liveTick().finally(() => setTimeout(loop, LIVE_MS)); })(); }
+const LIVE_MS = 3000;   // poll cadence -> chart trails the market by <=3s in every timeframe
+// Run on its own timer (not chained to the fetch) so a slow response never stretches the cadence,
+// and fire once immediately so the CI-to-now gap is bridged the instant the chart opens.
+function startLiveTicks() { liveTick(); setInterval(liveTick, LIVE_MS); }
 
 function drawSignalOverlays(sig) {
   clearOverlays();
@@ -412,7 +421,10 @@ function drawSignalOverlays(sig) {
     const label = `${z.action_fa || (z.dir === "LONG" ? "خرید" : "فروش")} · ${z.src}` + (rk ? ` · ریسک ${rk}` : "") + align;
     band(z.top, z.bot, fill, label, lc);
   });
-  drawZoneLines(sig.primary);   // primary by default; clicking another zone re-draws its levels
+  // NO auto entry/stop: the system only MARKS the zones (bands above). Entry / stop / target
+  // lines appear ONLY when the user clicks a zone (chartEl click -> drawZoneLines). Per the user:
+  // "don't give entry/stop until I click the zone you marked for me." clearOverlays() already
+  // wiped any lines from the previous signal, so the chart loads with marked zones and no levels.
   // RSI line + a "now" marker line so the user sees exactly where RSI sits vs 30/70
   rsiSeries.setData((sig.rsi && sig.rsi.series) ? sig.rsi.series : []);
   if (rsiNowLine) { try { rsiSeries.removePriceLine(rsiNowLine); } catch (e) {} rsiNowLine = null; }
