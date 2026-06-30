@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-30 08:09 UTC",
+  "updated": "2026-06-30 08:54 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -41,7 +41,8 @@
       "XAUUSD": 2.5
     },
     "disabled_sources": [
-      "FL-1h"
+      "FL-1h",
+      "OB-1h"
     ]
   },
   "reversal_enabled": false,
@@ -77,9 +78,10 @@
     "LTCUSDT|H1": 0.123,
     "DOTUSDT|M5": 0.502,
     "DOTUSDT|H1": 0.386,
-    "ETHUSDT|M15": 0.759,
+    "ETHUSDT|M15": 0.764,
+    "SOLUSDT|M15": 0.4,
     "XAUUSD|M5": 0.469,
-    "BTCUSDT|M15": 0.537
+    "BTCUSDT|M15": 0.548
   },
   "projection_model": {
     "_note": "idea-2 per-TF logistic (re-weighted direction + honest abstention). Fit by backtest/fit_projection_model.py, validated out-of-time by backtest/walkforward_idea2.py (overall 0.485->0.511 full-cov; gate ~0.535 @ 38% coverage). Remove this key to revert project() to the legacy hand-tuned score.",
