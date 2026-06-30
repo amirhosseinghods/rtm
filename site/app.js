@@ -516,21 +516,24 @@ function showZonePop(z, xpx, ypx) {
   pop.style.top = Math.min(Math.max(8, ypx + 10), ch - 190) + "px";
   pop.querySelector(".close").onclick = () => { pop.hidden = true; };
 }
+// Click a zone -> draw its entry/stop/levels + popover. Click OUTSIDE any zone -> wipe the
+// levels off the chart (the user asked: clicking off the marked zones removes entry/stop/...).
+function clickAway(pop) { pop.hidden = true; clearLines(); }
 chartEl.addEventListener("click", (e) => {
   const pop = $("#zonePop");
   if (e.target.closest(".zone-pop")) return;            // clicking inside the popover
-  if (!STATE.zones || !STATE.zones.length) { pop.hidden = true; return; }
+  if (!STATE.zones || !STATE.zones.length) { clickAway(pop); return; }
   const rect = chartEl.getBoundingClientRect();
   const y = e.clientY - rect.top, x = e.clientX - rect.left;
   const price = candles.coordinateToPrice(y);
-  if (price == null) { pop.hidden = true; return; }
+  if (price == null) { clickAway(pop); return; }
   let hit = STATE.zones.find((z) => price >= z.bot && price <= z.top);
   if (!hit) {
     hit = STATE.zones.slice().sort((a, b) =>
       Math.min(Math.abs(price - a.top), Math.abs(price - a.bot)) -
       Math.min(Math.abs(price - b.top), Math.abs(price - b.bot)))[0];
     const d = Math.min(Math.abs(price - hit.top), Math.abs(price - hit.bot));
-    if (d > (STATE.lastSig && STATE.lastSig.atr || 0) * 1.0) { pop.hidden = true; return; }  // empty space
+    if (d > (STATE.lastSig && STATE.lastSig.atr || 0) * 1.0) { clickAway(pop); return; }  // empty space -> clear
   }
   drawZoneLines(hit);   // move entry/SL/TP lines to the clicked zone
   showZonePop(hit, x, y);

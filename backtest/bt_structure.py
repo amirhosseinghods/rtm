@@ -37,6 +37,7 @@ MINSTOP_ATR = os.environ.get("FD_MINSTOP")               # None = per-symbol def
 OUT_CSV  = os.environ.get("FD_OUT", os.path.expanduser("~/Desktop/trade/backtest/bt_structure_rows.csv"))
 MODEL_MODE = os.environ.get("FD_MODEL", "off")           # off | veto | agree  (behavioural-model gate)
 MTAU = float(os.environ.get("FD_MTAU", "0.0"))           # agreement band: |p_up-0.5| must exceed this
+MTAU_LONG = float(os.environ.get("FD_MTAU_LONG", str(MTAU)))  # separate (usually stricter) band for LONGs
 ROOM_MIN = float(os.environ.get("FD_ROOM", "2.0"))       # min clear room (R) to the opposing zone for the "room" gate
 
 
@@ -162,9 +163,10 @@ def collect(D, sym, sess):
             if pup is not None:
                 pu = pup[i]
                 if MODEL_MODE == "veto":            # drop setups the model contradicts (mirrors live)
-                    if (dr == 1 and pu <= 0.5 - MTAU) or (dr == -1 and pu >= 0.5 + MTAU): continue
+                    if (dr == 1 and pu <= 0.5 - MTAU_LONG) or (dr == -1 and pu >= 0.5 + MTAU): continue
                 elif MODEL_MODE == "agree":         # stronger: only take setups the model AGREES with
-                    if not ((pu >= 0.5 + MTAU) if dr == 1 else (pu <= 0.5 - MTAU)): continue
+                    # asymmetric: LONGs (the weaker side) must clear a stricter band than SHORTs
+                    if not ((pu >= 0.5 + MTAU_LONG) if dr == 1 else (pu <= 0.5 - MTAU)): continue
             # ---- entry confirmations ----
             if CONF in ("reclaim", "all"):
                 # don't enter on the raw touch; require a reaction candle closing in trade dir, back inside the zone
