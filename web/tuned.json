@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-29 23:45 UTC",
+  "updated": "2026-06-30 01:38 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -31,7 +31,7 @@
       "default": 0.3,
       "OB-1h": 0.8,
       "FL-1h": 0.8,
-      "OB-15m": 0.75
+      "OB-15m": 0.8
     },
     "min_atr": {
       "default": 1.0,
@@ -58,11 +58,11 @@
     "XAUUSD|H1": 1.0,
     "XRPUSDT|M5": 0.476,
     "XRPUSDT|H1": 0.105,
-    "SOLUSDT|M5": 0.432,
+    "SOLUSDT|M5": 0.433,
     "SOLUSDT|H1": 1.0,
     "BNBUSDT|M5": 0.477,
     "BNBUSDT|H1": 0.333,
-    "ADAUSDT|M5": 0.488,
+    "ADAUSDT|M5": 0.489,
     "ADAUSDT|H1": 0.105,
     "DOGEUSDT|M5": 0.507,
     "DOGEUSDT|H1": 1.0,
@@ -72,9 +72,9 @@
     "LINKUSDT|H1": 0.107,
     "LTCUSDT|M5": 0.499,
     "LTCUSDT|H1": 0.109,
-    "DOTUSDT|M5": 0.501,
+    "DOTUSDT|M5": 0.502,
     "DOTUSDT|H1": 0.382,
-    "ETHUSDT|M15": 0.833,
+    "ETHUSDT|M15": 0.816,
     "XAUUSD|M5": 0.468
   },
   "projection_model": {
