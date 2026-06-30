@@ -188,7 +188,7 @@ def proj_reach(swing, tf_minutes):
 
 def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
             tf_weight=1.0, dom_bias=0, zones=None, price=None, n_future=48, model=None,
-            swing=None, trade=None):
+            swing=None, trade=None, calib=None):
     """Honest, ZONE-AWARE directional projection (a hypothesis, not a promise), drawn as an
     ORGANIC wavy path. The path runs toward the nearest opposing zone; on contact it either
     REACTS (bounces/returns) or BREAKS through and continues — decided by zone strength
@@ -238,6 +238,15 @@ def project(time, c, atr, bias_val, rsi_last, divs, primary, tf_minutes,
         tau = float(m.get("tau", 0.0))
         dirn = 0 if abs(p_up - 0.5) < tau else (1 if p_up >= 0.5 else -1)
         conf = max(0.12, min(0.9, p_up if p_up >= 0.5 else 1.0 - p_up))
+        # ---- per-TF reliability calibration (learned from accumulated predictions vs outcome) ----
+        # The fitted logistic is OVER-confident on some TFs: measured 2026-06-30, H1 calls with
+        # conf>0.65 scored only ~38% (anti-predictive) while H1's conf<=0.65 band stayed reliable.
+        # Above the per-TF cap the model sits in that unreliable over-confident zone, so we ABSTAIN
+        # (neutral) instead of showing a confident wrong call. Caps live in tuned.json::proj_calibration.
+        if calib:
+            cap = (calib.get(_proj_tf_key(tf_minutes), {}) or {}).get("conf_cap")
+            if cap is not None and conf > float(cap):
+                dirn = 0; conf = float(cap)
     label = {1: "صعودی", -1: "نزولی", 0: "خنثی/رنج"}[dirn if dirn in (-1, 0, 1) else 0]
 
     note = []

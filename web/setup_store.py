@@ -353,6 +353,16 @@ def lessons_stops(min_n=20):
             if v is None: continue
             groups.setdefault(str(v), []).append(r)
         out[key] = {k: _agg_stops(v) for k, v in groups.items() if len(v) >= min_n}
+    # by_src over the ACTIONABLE subset only — the trades the system actually recommends. The
+    # auto-disable must judge a source on THESE (not the raw context zones), else a core source
+    # like OB-1h gets muted by its un-traded population even though its gated trades win ~80%.
+    act = [r for r in rows if r.get("actionable")]
+    asrc = {}
+    for r in act:
+        v = r.get("src")
+        if v is not None:
+            asrc.setdefault(str(v), []).append(r)
+    out["by_src_actionable"] = {k: _agg_stops(v) for k, v in asrc.items() if len(v) >= min_n}
     return out
 
 

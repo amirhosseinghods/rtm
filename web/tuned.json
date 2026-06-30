@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-06-30 08:54 UTC",
+  "updated": "2026-06-30 11:14 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -41,8 +41,7 @@
       "XAUUSD": 2.5
     },
     "disabled_sources": [
-      "FL-1h",
-      "OB-1h"
+      "FL-1h"
     ]
   },
   "reversal_enabled": false,
@@ -136,6 +135,18 @@
         -0.07682
       ],
       "tau": 0.0
+    }
+  },
+  "proj_calibration": {
+    "_note": "Per-TF reliability calibration learned from accumulated predictions vs realized outcome (web/learning/predictions.jsonl, n=18.4k scored, 2026-06-30). The fitted logistic is OVER-confident on H1: directional accuracy by conf band was M5 0.55-0.65 -> 70-78% (well-calibrated), but H1 conf 0.65-0.70 -> 11.5% and 0.70+ -> 41.8% (ANTI-predictive, n=432). conf_cap = the confidence ceiling beyond which the model's call is unreliable; above it project() ABSTAINS (neutral, no confident arrow) instead of showing a wrong high-conf call. H1 capped at 0.65; M5/M15 left effectively uncapped (calibrated). Re-measure and raise a cap if a TF's high-conf band recovers. Remove this key to disable calibration.",
+    "M5": {
+      "conf_cap": 0.9
+    },
+    "M15": {
+      "conf_cap": 0.9
+    },
+    "H1": {
+      "conf_cap": 0.65
     }
   },
   "swing_model": {

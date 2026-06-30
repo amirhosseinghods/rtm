@@ -107,13 +107,18 @@ def run(stamp=None):
         if abs(new - cur) > 1e-9:
             stops["buf_atr"][src] = new
             changes.append(f"stops.buf_atr[{src}] {cur}->{new} (sweep{g['sweep_frac']} gb{g['giveback_frac']})")
-        # auto-mute a chronically losing source (mirror reversal auto-disable)
-        if g["stop_rate"] > 70 and (g["expR"] or 0) < 0 and src not in stops["disabled_sources"]:
-            stops["disabled_sources"].append(src)
-            changes.append(f"source {src} auto-disabled (stop {g['stop_rate']}% expR {g['expR']:+})")
-        elif g["stop_rate"] <= 60 and (g["expR"] or 0) > 0 and src in stops["disabled_sources"]:
-            stops["disabled_sources"].remove(src)                # recovered -> re-enable
-            changes.append(f"source {src} re-enabled (stop {g['stop_rate']}% expR {g['expR']:+})")
+        # auto-mute a chronically losing source — but JUDGE IT ON ITS ACTIONABLE (recommended) trades,
+        # not the raw context-zone population. Muting happens BEFORE the actionable gate, so a source
+        # whose gated trades win (e.g. OB-1h ~80%) must NOT be disabled by its un-traded zones.
+        ga = (ls.get("by_src_actionable") or {}).get(src)
+        gj = ga if (ga and ga["n"] >= MIN_N) else None     # prefer actionable verdict; skip if too few
+        if gj is not None:
+            if gj["stop_rate"] > 70 and (gj["expR"] or 0) < 0 and src not in stops["disabled_sources"]:
+                stops["disabled_sources"].append(src)
+                changes.append(f"source {src} auto-disabled (actionable stop {gj['stop_rate']}% expR {gj['expR']:+})")
+            elif gj["stop_rate"] <= 60 and (gj["expR"] or 0) > 0 and src in stops["disabled_sources"]:
+                stops["disabled_sources"].remove(src)            # recovered -> re-enable
+                changes.append(f"source {src} re-enabled (actionable stop {gj['stop_rate']}% expR {gj['expR']:+})")
     tuned["stops"] = stops
     if ls.get("overall"):
         log.append(f"- استاپ‌ها: { {k: ls['by_src'][k]['stop_rate'] for k in ls.get('by_src', {})} } "

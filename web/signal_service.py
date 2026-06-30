@@ -456,7 +456,7 @@ def compute(sym, tf="M5"):
     proj = RT.project(D["time"], c, atr, biasv, rsi_last, divs, primary, tfmin,
                       tf_weight=tfw, dom_bias=dom_bias, zones=zones, price=price,
                       model=TUNED().get("projection_model"), swing=TUNED().get("swing_model"),
-                      trade=TUNED().get("swing_trade"))
+                      trade=TUNED().get("swing_trade"), calib=TUNED().get("proj_calibration"))
 
     # ---- zones consistent with the projection: tag each zone hم‌جهت / خلافِ پیش‌بینی ----
     pdir = proj.get("dir_val", 0)
