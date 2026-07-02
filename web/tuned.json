@@ -1,6 +1,6 @@
 {
   "_note": "Knobs the optimizer (optimize.py / scheduled agent) tunes from accumulated data. The service reads this file live (no restart). Edit via optimization, not by hand.",
-  "updated": "2026-07-02 14:37 UTC",
+  "updated": "2026-07-02 16:27 UTC",
   "combo_min": 2,
   "risk_low_max": 1,
   "risk_med_max": 3,
@@ -81,7 +81,7 @@
     "ETHUSDT|M15": 0.653,
     "PAXGUSDT|M15": 0.746,
     "SOLUSDT|M15": 0.414,
-    "XAUUSD|M5": 0.467,
+    "XAUUSD|M5": 0.468,
     "BTCUSDT|M15": 0.452,
     "XRPUSDT|M15": 0.531,
     "ADAUSDT|M15": 0.655,
